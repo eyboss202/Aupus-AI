@@ -1,0 +1,23 @@
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# Data, checkpoints, logs and release weights never go in git.
+# (The hand-written SFT identity set is the one exception; it is reviewed and small.)
+data/*
+!data/identity.jsonl
+checkpoints/
+runs/
+release/
+*.safetensors
+*.pt
+*.bin
+
+# Private project brief (kept local)
+Prompt.md

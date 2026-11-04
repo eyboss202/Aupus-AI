@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aupus"
+version = "0.1.0.dev0"
+description = "Aupus AI: a small English language model built completely from scratch (tokenizer, model, training, inference)."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Aupus AI" }]
+keywords = ["language-model", "transformer", "llm", "from-scratch", "pytorch"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# Runtime dependencies are deliberately minimal (see docs/PLAN.md, "Hard rules").
+# PyTorch is not pinned to a CUDA/CPU flavour here: install the right wheel for
+# your machine first (see README), then install this package.
+dependencies = [
+    "torch>=2.4",
+    "numpy>=1.26",
+    "pyyaml>=6.0",
+    "safetensors>=0.4",
+    "tqdm>=4.66",
+    "tensorboard>=2.16",
+]
+
+[project.optional-dependencies]
+# `datasets` is used ONLY to download raw open text data, never models.
+data = ["datasets>=2.19"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[tool.setuptools.packages.find]
+include = ["aupus*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["slow: tests that take more than a few seconds on CPU"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["data", "checkpoints", "runs", "release"]
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes, I: import sorting, UP: modern syntax,
+# B: likely bugs, SIM: simplifications, ANN: type hints everywhere (spec requirement).
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "ANN"]
+ignore = ["ANN401"]  # `Any` is sometimes the honest type (e.g. raw YAML values).
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]  # test functions don't need return annotations

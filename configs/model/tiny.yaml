@@ -1,0 +1,9 @@
+# tiny (~34M params): fast end-to-end experiments on CPU (Milestone 6).
+# Note: with a 32k vocab, embeddings are about half of the parameters at this size.
+vocab_size: 32000
+d_model: 512
+n_layers: 6
+n_heads: 8
+n_kv_heads: 4
+ffn_hidden: 1408
+context_length: 1024

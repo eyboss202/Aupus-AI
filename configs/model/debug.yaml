@@ -1,0 +1,10 @@
+# debug (~6.5M params): unit tests, overfit-one-batch checks and CI on CPU.
+# Uses a smaller vocab than the real tokenizer so tests stay fast; it is only
+# ever fed random or test-tokenizer ids, never real training data.
+vocab_size: 8192
+d_model: 256
+n_layers: 6
+n_heads: 4
+n_kv_heads: 2
+ffn_hidden: 704
+context_length: 256

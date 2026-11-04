@@ -1,0 +1,10 @@
+# small (~125M params): the planned Aupus 0.1 model (see docs/PLAN.md).
+# Deeper-and-narrower (16 layers at width 768) beats the GPT-2-small shape
+# (12 x 768) at this scale. GQA 12:4 makes the KV cache 3x smaller.
+vocab_size: 32000
+d_model: 768
+n_layers: 16
+n_heads: 12
+n_kv_heads: 4
+ffn_hidden: 2048
+context_length: 1024

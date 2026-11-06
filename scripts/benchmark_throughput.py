@@ -1,199 +1,198 @@
-"""Measure real training throughput (tokens/sec) for each candidate model preset.
+"""Measure real training throughput (tokens/sec) for each model preset, on CPU or CUDA.
 
 Why this exists: the token budget for Aupus 0.1 is fixed by Chinchilla-style
 scaling (~20 tokens per parameter), so the only unknown in "how long will
 training take?" is how many tokens per second this machine can push through a
-full training step (forward + backward + AdamW update). We measure that instead
-of guessing.
+full training step (forward + backward + grad clipping + AdamW update). We
+measure that instead of guessing.
 
-NOTE (Phase 0 only): this file contains a *compact, self-contained* Llama-style
-model with the same shapes and FLOP profile as the planned architecture
-(RMSNorm, RoPE, GQA via SDPA, SwiGLU, tied embeddings). It exists so we can
-benchmark before Milestone 4. Once `aupus.model` exists, this script will import
-the real model instead and this copy will be deleted.
+It benchmarks the real ``aupus.model.Transformer`` on random tokens.
+
+Precision (``--dtype``):
+  * ``fp32``: plain float32;
+  * ``bf16``: bf16 autocast (Ampere+ GPUs; on CPU only fast with AVX-512 BF16);
+  * ``fp16``: fp16 autocast + GradScaler, for GPUs with fast fp16 but no bf16
+    (e.g. T4). The scaler multiplies the loss so small fp16 gradients don't round
+    to 0. Measure first: on GPUs without tensor cores (GTX 16xx) fp16 matmuls
+    are ~5x *slower* than fp32 (docs/PLAN.md section 13).
 
 Usage:
-    python scripts/benchmark_throughput.py --presets tiny small --context 1024 --micro-batch 1
+    python scripts/benchmark_throughput.py --presets tiny small --micro-batch 1
+    python scripts/benchmark_throughput.py --device cuda --presets small --micro-batch 2 --grad-checkpointing
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
-import resource
+import sys
 import time
 from dataclasses import asdict
 
 import torch
-import torch.nn.functional as F
-from torch import nn
 
-from aupus.model.config import PRESET_DIR, ModelConfig, flops_per_token, param_count
+from aupus.model import ModelConfig, Transformer, flops_per_token, param_count
+from aupus.model.config import PRESET_DIR
 
 PRESETS = sorted(p.stem for p in PRESET_DIR.glob("*.yaml"))
+DTYPES = {"fp32": torch.float32, "bf16": torch.bfloat16, "fp16": torch.float16}
 
 
-class RMSNorm(nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6) -> None:
-        super().__init__()
-        self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
+def peak_cpu_rss_gib() -> float | None:
+    """Peak resident memory of this process, on Linux/macOS and Windows."""
+    try:
+        import resource  # Unix only
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps) * self.weight
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return rss / 1024**3 if sys.platform == "darwin" else rss / 1024**2  # bytes on macOS, KiB on Linux
+    except ImportError:
+        pass
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
 
+        class Counters(ctypes.Structure):
+            _fields_ = [
+                ("cb", wintypes.DWORD),
+                ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
 
-def rope_cache(seq_len: int, head_dim: int, base: float = 10000.0) -> tuple[torch.Tensor, torch.Tensor]:
-    inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2).float() / head_dim))
-    angles = torch.outer(torch.arange(seq_len).float(), inv_freq)
-    return angles.cos(), angles.sin()
-
-
-def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-    x1, x2 = x[..., ::2], x[..., 1::2]
-    return torch.stack((x1 * cos - x2 * sin, x1 * sin + x2 * cos), dim=-1).flatten(-2)
-
-
-class Block(nn.Module):
-    def __init__(self, p: ModelConfig) -> None:
-        super().__init__()
-        self.p = p
-        hd = p.d_model // p.n_heads
-        self.norm1, self.norm2 = RMSNorm(p.d_model), RMSNorm(p.d_model)
-        self.wq = nn.Linear(p.d_model, p.n_heads * hd, bias=False)
-        self.wkv = nn.Linear(p.d_model, 2 * p.n_kv_heads * hd, bias=False)
-        self.wo = nn.Linear(p.n_heads * hd, p.d_model, bias=False)
-        self.w_gate_up = nn.Linear(p.d_model, 2 * p.ffn_hidden, bias=False)
-        self.w_down = nn.Linear(p.ffn_hidden, p.d_model, bias=False)
-
-    def forward(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-        b, t, _ = x.shape
-        p, hd = self.p, self.p.d_model // self.p.n_heads
-        h = self.norm1(x)
-        q = self.wq(h).view(b, t, p.n_heads, hd).transpose(1, 2)
-        k, v = self.wkv(h).view(b, t, 2, p.n_kv_heads, hd).unbind(2)
-        k, v = k.transpose(1, 2), v.transpose(1, 2)
-        q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
-        attn = F.scaled_dot_product_attention(q, k, v, is_causal=True, enable_gqa=True)
-        x = x + self.wo(attn.transpose(1, 2).reshape(b, t, -1))
-        gate, up = self.w_gate_up(self.norm2(x)).chunk(2, dim=-1)
-        return x + self.w_down(F.silu(gate) * up)
-
-
-class BenchModel(nn.Module):
-    def __init__(self, p: ModelConfig, context: int) -> None:
-        super().__init__()
-        self.embed = nn.Embedding(p.vocab_size, p.d_model)
-        self.blocks = nn.ModuleList(Block(p) for _ in range(p.n_layers))
-        self.norm = RMSNorm(p.d_model)
-        cos, sin = rope_cache(context, p.d_model // p.n_heads)
-        self.register_buffer("cos", cos, persistent=False)
-        self.register_buffer("sin", sin, persistent=False)
-        # GPT-2-style init: N(0, 0.02). PyTorch's default N(0, 1) embedding init would
-        # produce huge logits through the tied LM head (initial loss >> ln(vocab)).
-        for m in self.modules():
-            if isinstance(m, (nn.Linear, nn.Embedding)):
-                nn.init.normal_(m.weight, std=0.02)
-
-    def forward(self, idx: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        t = idx.shape[1]
-        x = self.embed(idx)
-        for blk in self.blocks:
-            x = blk(x, self.cos[:t], self.sin[:t])
-        logits = self.norm(x) @ self.embed.weight.T  # weight tying
-        return F.cross_entropy(logits.float().view(-1, logits.size(-1)), targets.view(-1))
+        # Explicit types: without them ctypes passes the process handle (-1) as a
+        # 32-bit int, which is an invalid handle on 64-bit Windows.
+        kernel32, psapi = ctypes.windll.kernel32, ctypes.windll.psapi
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+        psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+        c = Counters()
+        c.cb = ctypes.sizeof(Counters)
+        if psapi.GetProcessMemoryInfo(kernel32.GetCurrentProcess(), ctypes.byref(c), c.cb):
+            return c.PeakWorkingSetSize / 1024**3
+    return None
 
 
 def bench(
     name: str,
-    p: ModelConfig,
+    cfg: ModelConfig,
+    device: str,
     context: int,
     micro_batch: int,
     steps: int,
     warmup: int,
     dtype: str,
     compile_: bool,
+    grad_checkpointing: bool,
 ) -> dict:
     torch.manual_seed(0)
-    model = BenchModel(p, context)
-    if compile_:
-        model = torch.compile(model)
-    opt = torch.optim.AdamW(model.parameters(), lr=1e-4, fused=False)
-    x = torch.randint(0, p.vocab_size, (micro_batch, context))
-    y = torch.randint(0, p.vocab_size, (micro_batch, context))
-    use_bf16 = dtype == "bf16"
+    cfg = ModelConfig(**{**asdict(cfg), "context_length": max(context, cfg.context_length)})
+    model = Transformer(cfg).to(device).train()
+    model.gradient_checkpointing = grad_checkpointing
+    run = torch.compile(model) if compile_ else model
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-4, fused=device == "cuda")
+    scaler = torch.amp.GradScaler(device, enabled=dtype == "fp16")
+    x = torch.randint(0, cfg.vocab_size, (micro_batch, context), device=device)
+    y = torch.randint(0, cfg.vocab_size, (micro_batch, context), device=device)
+    autocast = torch.autocast(device, dtype=DTYPES[dtype]) if dtype != "fp32" else contextlib.nullcontext()
+
+    def sync() -> None:
+        if device == "cuda":
+            torch.cuda.synchronize()
 
     def step() -> float:
-        with torch.autocast("cpu", dtype=torch.bfloat16, enabled=use_bf16):
-            loss = model(x, y)
-        loss.backward()
+        with autocast:
+            loss = run(x, y).loss
+        scaler.scale(loss).backward()
+        scaler.unscale_(opt)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        opt.step()
+        scaler.step(opt)
+        scaler.update()
         opt.zero_grad(set_to_none=True)
         return loss.item()
 
+    if device == "cuda":
+        torch.cuda.reset_peak_memory_stats()
     t0 = time.perf_counter()
     for _ in range(warmup):
         step()
+    sync()
     warm_s = time.perf_counter() - t0
     t0 = time.perf_counter()
     for _ in range(steps):
         loss = step()
+    sync()
     elapsed = time.perf_counter() - t0
     tok_s = steps * micro_batch * context / elapsed
-    flops = flops_per_token(p, context)["train"]
-    counts = param_count(p)
-    total, non_embed = counts["total"], counts["non_embedding"]
-    return {
+    flops = flops_per_token(cfg, context)["train"]
+    counts = param_count(cfg)
+    result = {
         "preset": name,
-        **asdict(p),
-        "context_benchmarked": context,
-        "params_total_M": round(total / 1e6, 1),
-        "params_non_embedding_M": round(non_embed / 1e6, 1),
+        "device": torch.cuda.get_device_name() if device == "cuda" else "cpu",
+        "params_total_M": round(counts["total"] / 1e6, 1),
+        "context": context,
         "micro_batch": micro_batch,
         "dtype": dtype,
         "compiled": compile_,
+        "grad_checkpointing": grad_checkpointing,
         "tokens_per_sec": round(tok_s, 1),
-        "achieved_gflops": round(tok_s * flops / 1e9, 1),
-        "sec_per_step": round(elapsed / steps, 2),
+        # Model FLOPs only: recomputation from checkpointing isn't counted (standard MFU convention).
+        "achieved_tflops": round(tok_s * flops / 1e12, 3),
+        "sec_per_step": round(elapsed / steps, 3),
         "warmup_sec": round(warm_s, 1),
-        "peak_rss_gib": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2, 2),
         "final_loss": round(loss, 3),
-        "sanity_initial_loss_expected": round(math.log(p.vocab_size), 3),
+        "sanity_initial_loss_expected": round(math.log(cfg.vocab_size), 3),
     }
+    if device == "cuda":
+        result["peak_vram_gib"] = round(torch.cuda.max_memory_allocated() / 1024**3, 2)
+    rss = peak_cpu_rss_gib()
+    result["peak_rss_gib"] = round(rss, 2) if rss is not None else None
+    return result
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--presets", nargs="+", default=PRESETS, choices=PRESETS)
+    ap.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     ap.add_argument("--context", type=int, default=1024)
     ap.add_argument("--micro-batch", type=int, default=1)
-    ap.add_argument("--steps", type=int, default=3)
-    ap.add_argument("--warmup", type=int, default=1)
-    ap.add_argument("--dtype", choices=["fp32", "bf16"], default="fp32")
+    ap.add_argument("--steps", type=int, default=5)
+    ap.add_argument("--warmup", type=int, default=2)
+    ap.add_argument("--dtype", choices=sorted(DTYPES), default="fp32")
     ap.add_argument("--compile", action="store_true", help="wrap the model in torch.compile")
+    ap.add_argument("--grad-checkpointing", action="store_true", help="recompute activations in backward")
     ap.add_argument("--threads", type=int, default=None, help="torch CPU threads (default: torch's choice)")
     args = ap.parse_args()
     if args.threads:
         torch.set_num_threads(args.threads)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    if device != "cpu":
-        raise SystemExit(
-            "This Phase-0 benchmark only implements the CPU path; extend it when a GPU is available."
-        )
+    device = ("cuda" if torch.cuda.is_available() else "cpu") if args.device == "auto" else args.device
+    if device == "cuda" and not torch.cuda.is_available():
+        raise SystemExit("--device cuda requested but torch.cuda.is_available() is False")
     print(f"# torch {torch.__version__} | device={device} | threads={torch.get_num_threads()}")
     for name in args.presets:
-        r = bench(
-            name,
-            ModelConfig.preset(name),
-            args.context,
-            args.micro_batch,
-            args.steps,
-            args.warmup,
-            args.dtype,
-            args.compile,
-        )
+        try:
+            r = bench(
+                name,
+                ModelConfig.preset(name),
+                device,
+                args.context,
+                args.micro_batch,
+                args.steps,
+                args.warmup,
+                args.dtype,
+                args.compile,
+                args.grad_checkpointing,
+            )
+        except torch.cuda.OutOfMemoryError:
+            r = {"preset": name, "micro_batch": args.micro_batch, "error": "out of memory"}
+            torch.cuda.empty_cache()
         print(json.dumps(r), flush=True)
 
 

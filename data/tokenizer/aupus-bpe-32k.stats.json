@@ -1,0 +1,17 @@
+{
+  "machine": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel, 6 threads",
+  "count_seconds": 7.0,
+  "distinct_chunks": 644534,
+  "total_chunks": 59231968,
+  "train_file_bytes": 302275578,
+  "merge_seconds": 40.2,
+  "vocab_size": 32000,
+  "heldout_docs": 2112,
+  "heldout_bytes": 10002062,
+  "heldout_tokens": 2179464,
+  "bytes_per_token": 4.589,
+  "chars_per_token": 4.558,
+  "roundtrip_ok": true,
+  "encode_mb_per_s_one_process": 3.82,
+  "encode_tokens_per_s_one_process": 831856
+}

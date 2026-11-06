@@ -1,0 +1,34 @@
+# Milestone 8: Aupus 0.1 Base (`small`, 125.3M params) on ~2.5B FineWeb-Edu tokens (docs/PLAN.md §4).
+# DRAFT until the rented GPU is benchmarked: micro_batch x grad_accum must stay 256 sequences
+# (262,144 tokens/step); pick micro_batch from scripts/benchmark_throughput.py on that GPU
+# (e.g. 16 x 16 on 24 GB, 32 x 8 on 80 GB).
+run_name: aupus-0.1-base
+model: small
+data_dir: data/pretrain/fineweb_edu
+seq_len: 1024
+micro_batch: 16
+grad_accum: 16         # 16 x 16 x 1024 = 262,144 tokens per step
+max_steps: 9537        # 9537 x 262,144 = 2.50B tokens (20 tokens/param)
+optim:
+  lr: 6.0e-4
+  min_lr: 6.0e-5
+  warmup_steps: 190    # 2%
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1.0e-8
+  grad_clip: 1.0
+precision: auto        # bf16 on Ampere+
+compile: true
+eval_every: 250
+eval_batches: 100      # 100 x 16 x 1024 = 1.6M val tokens
+save_every: 500
+keep_last: 3
+log_every: 10
+sample_every: 1000
+sample_tokens: 80
+sample_prompts:
+  - "The water cycle is"
+  - "In 1492, Christopher Columbus"
+  - "The most important thing to remember when learning to read is"
+  - "A prime number is"

@@ -1,0 +1,31 @@
+# Milestone 6: end-to-end check of the whole pretraining stack with the `tiny` model (~34M params)
+# on the 65M-token M5 sample. Goal: loss falls, val loss tracks train loss, samples get better,
+# resume works. It is NOT meant to produce a useful model.
+# Sized for a 4 GiB GTX 1650 Super in fp32 (~1.7 GiB peak, docs/PLAN.md §13); runs on CPU too, ~6x slower.
+run_name: tiny
+model: tiny
+data_dir: data/pretrain/sample
+seq_len: 512
+micro_batch: 4
+grad_accum: 8          # 4 x 8 x 512 = 16,384 tokens per optimizer step
+max_steps: 1200        # ~19.7M tokens, ~0.3 epochs of the sample
+optim:
+  lr: 1.0e-3           # small models tolerate a higher peak LR than `small`'s 6e-4
+  min_lr: 1.0e-4
+  warmup_steps: 60
+  weight_decay: 0.1
+  grad_clip: 1.0
+precision: auto        # fp32 on this GPU (no bf16; fp16 is 5x slower without tensor cores)
+compile: true          # falls back to eager where unsupported (e.g. no Triton on Windows)
+eval_every: 100
+eval_batches: 40       # 40 x 4 x 512 = 82K val tokens, the same every time
+save_every: 200
+keep_last: 3
+log_every: 10
+sample_every: 200
+sample_tokens: 60
+sample_prompts:
+  - "The water cycle is"
+  - "In 1492, Christopher Columbus"
+  - "The most important thing to remember when learning to read is"
+  - "A prime number is"

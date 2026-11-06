@@ -1,6 +1,8 @@
 # Aupus 0.1 — Phase 0 Plan
 
 Status: **approved** (2026-11-04). Decisions are recorded in §10.
+Progress: Milestones 1–6 done (tokenizer §11, model §13, data pipeline §14, pretraining loop §15; all 2026-11-06). Development moved to a
+new machine on 2026-11-06 (§12).
 Date: 2026-11-04
 
 ## 1. Detected hardware (from `scripts/check_env.py`)
@@ -115,7 +117,7 @@ about 3e-5 (≈ 1/20 of pretraining), 2–3 epochs over ~20–30K conversations,
 loss only on assistant tokens, early-stop on val loss. A few minutes to an hour
 on the rented GPU.
 
-## 5. Data plan (to be documented in `docs/DATA.md`)
+## 5. Data plan (documented in `docs/DATA.md`)
 
 | Source | Use | License | Size used |
 |---|---|---|---|
@@ -150,11 +152,11 @@ separators.
 | # | Milestone | Where | Compute time |
 |---|---|---|---|
 | 1 | Phase 0: specs, benchmark, this plan | laptop | done |
-| 2 | Skeleton, `pyproject.toml`, configs, tests, CI, LICENSE | laptop | — |
-| 3 | Tokenizer + tests (train on ~300 MB sample) | laptop | ~0.3 GB download; BPE training ~10–40 min (measured then) |
-| 4 | Model + tests (overfit `debug`) | laptop | minutes |
-| 5 | Data pipeline on a small sample | laptop | minutes |
-| 6 | Pretraining loop + `tiny` e2e run | laptop | ~25 min |
+| 2 | Skeleton, `pyproject.toml`, configs, tests, CI, LICENSE | laptop | done |
+| 3 | Tokenizer + tests (train on ~300 MB sample) | desktop | done: 310 MB download in ~1 min; BPE training **47 s** (§11) |
+| 4 | Model + tests (overfit `debug`) | desktop | done: overfit test ~6 s on CPU; CUDA benchmark (§13) |
+| 5 | Data pipeline on a small sample | desktop | done: 300 MB in 49 s → 64.8M tokens (§14) |
+| 6 | Pretraining loop + `tiny` e2e run | desktop GPU | done: 1,200 steps / 19.7M tokens in ~42 min (§15) |
 | 7 | Full data prep (**ask first**) | laptop or GPU box | ~1–3 h, ~10 GB download |
 | 8 | Aupus 0.1 Base pretraining (**ask first**) | rented GPU | ~5–9 h |
 | 9 | Eval harness (HellaSwag, ARC-Easy, PIQA, val ppl) | rented GPU or laptop | <1 h |
@@ -180,7 +182,7 @@ These are ballpark figures based on published results for similarly sized models
 |---|---|
 | Cloud instance is pre-empted or dies mid-run | Full resume (model/optimizer/scheduler/RNG/dataloader). Copy checkpoints off the box regularly |
 | GPU throughput lower than calculated | Re-benchmark first on the rented GPU. Re-estimate before committing hours |
-| Pure-Python BPE encode too slow for 2.5B tokens | Multiprocessing (16 threads) + caching repeated pre-token chunks. If still too slow, a small C extension (allowed by spec) |
+| ~~Pure-Python BPE encode too slow for 2.5B tokens~~ | **Resolved in M3:** measured 0.83M tokens/s per process with the chunk cache, so ~10–15 min for 2.5B tokens on 6 processes. No C extension needed (§11) |
 | 15 GB RAM limits dedup / tokenizer training | Shard-wise processing, NumPy arrays, LSH bands on disk if needed |
 | Laptop thermal throttling during long CPU jobs | Keep laptop runs short (M6 ≤ 30 min) |
 | Wikipedia CC BY-SA licence ambiguity | Avoided: Wikipedia not used in 0.1 |
@@ -198,3 +200,201 @@ These are ballpark figures based on published results for similarly sized models
 | 5 | Project root | This repo's root (`Aupus-AI/`) is the spec's `aupus-ai/` |
 | 6 | CI | GitHub Actions installs the CPU PyTorch wheel from the PyTorch CPU index |
 | 7 | Build backend | `setuptools` (standard packaging; not a runtime dependency) |
+| 8 | Vocab accounting | **32,000 ids in total**, matching `vocab_size: 32000` in the model presets: 256 bytes + 31,737 merges + 7 special tokens. The special tokens take the last 7 ids |
+| 9 | Special tokens | `<\|bos\|>` `<\|eos\|>` `<\|pad\|>` `<\|system\|>` `<\|user\|>` `<\|assistant\|>` `<\|end\|>` (ids 31993–31999). `encode` treats them as plain text unless `allow_special=True`, so typed-in control strings can't hijack the chat format |
+| 10 | Pre-tokenization regex | GPT-2's pattern rebuilt with the standard-library `re` (no `regex` dependency), plus numbers split into groups of ≤ 3 digits and newline chunks (from GPT-4 / Llama 3). Lossless by construction; fuzz-tested |
+| 11 | Tokenizer in git | `data/tokenizer/aupus-bpe-32k.{json,vocab.txt,stats.json}` (~1 MB) are tracked: small, deterministic, needed by every later step. The training sample isn't tracked; the download script pins the FineWeb-Edu revision so it can be rebuilt exactly |
+| 12 | Where M7 data prep runs | **Locally** (desktop, §12): measured tokenization speed makes it ~10–15 min of CPU; download and dedup dominate. Still "ask first" because of the ~10 GB download |
+| 13 | Precision on GTX 16xx / Turing without tensor cores | **fp32.** Measured fp16 matmul is 0.5 TFLOPS vs 2.6–3.0 fp32 (cuBLAS has no fast fp16 path without tensor cores). bf16 autocast stays the default on Ampere+ rented GPUs; fp16 + GradScaler only where fp16 is actually fast (T4) |
+| 14 | Attention kernel | `F.scaled_dot_product_attention`, with GQA K/V heads expanded by view before the call rather than SDPA's `enable_gqa` (the memory-efficient kernel used on pre-Ampere GPUs doesn't support it). The KV cache stores the un-expanded 4 heads |
+| 15 | Model API | `Transformer(cfg)(idx, targets) -> Output(logits, loss)`; `targets == -100` is ignored (padding, SFT prompt tokens); `gradient_checkpointing` flag per model; `generate` / `stream` in `aupus.model.generate` |
+| 16 | Dedup strategy | Streaming keep-first: exact BLAKE2b hash, then MinHash/LSH (128 perms = 16 bands × 8 rows, word 5-grams, ~0.71 similarity threshold). No candidate verification or clustering: simpler, and the extra false positives (~6% at similarity 0.5) are negligible for unrelated documents |
+| 17 | Train/val split | By document hash (val iff hash < 0.5% of hash space): stable regardless of order, filtering or worker count |
+| 18 | Quality filters | Gopher rules with Gopher's thresholds, not hand-tuned. Manual review: some legit bullet-list docs are dropped (~0.2%); accepted |
+| 19 | Packing | Windows of `seq_len + 1` tokens packed across `<\|eos\|>`-separated documents, never across shards; no attention masking at document boundaries (standard GPT-style) |
+| 20 | Training checkpoints | `torch.save` of model + AdamW + GradScaler + loader position + RNG + resolved configs, loaded with `weights_only=True` (no pickled code runs). Written to a temp file and renamed (atomic). fp32 with optimizer state (~3× the weights; 391 MB for `tiny`, ~1.5 GB for `small`). The release export (M11) is weights-only safetensors |
+| 21 | LR schedule | A pure function of the step (`lr_at`), set on the optimizer each step. No scheduler object, so nothing extra to save, and resume can't desync it |
+| 22 | Run layout | Everything for a run lives in `runs/<run_name>/` (config, logs, metrics, TensorBoard, checkpoints), so one directory is all that has to be copied off a rented box. Starting a run over an existing run's checkpoints is an error; `--resume` is explicit |
+| 23 | Interrupts | Ctrl-C sets a flag; the loop finishes the step, saves and exits (second Ctrl-C aborts). On resume, `metrics.jsonl` and TensorBoard drop records after the checkpoint's step |
+| 24 | `torch.compile` | `compile: true` means "where supported": skipped without Triton (CUDA) or without a C++ compiler (CPU), and a dummy forward + backward is compiled before the first real step so a toolchain failure falls back to eager instead of crashing mid-step. On this Windows machine it is always eager |
+| 25 | Sampling during training | Prompts start with `<\|eos\|>` (pretraining data has no `<\|bos\|>`; a new document starts after `<\|eos\|>`). Temperature 0.8, top-k 50, a fixed seed per prompt, so samples change only because the model does |
+| 26 | Weight decay groups | Decay on `nn.Linear` weights only; none on RMSNorm gains or the (tied) embedding |
+
+## 11. Milestone 3 results: tokenizer
+
+Trained with `scripts/train_tokenizer.py` on the first 300 MB (61,842 docs) of
+FineWeb-Edu `sample-10BT` (pinned revision `87f0914`, NFC-normalised). Evaluated
+on the next 10 MB (2,112 docs), which training never saw. Full numbers are in
+`data/tokenizer/aupus-bpe-32k.stats.json`.
+
+| Measurement | Value |
+|---|---|
+| Chunks counted | 59.2M (644,534 distinct), 7.0 s on 6 processes |
+| Merge learning (31,737 merges, incremental pair counts) | 40.2 s |
+| Held-out compression | **4.59 bytes/token**, 4.56 chars/token |
+| Held-out round-trip | lossless (all 2,112 docs) |
+| Encode speed, one process, cold cache | 3.8 MB/s ≈ **0.83M tokens/s** |
+
+What this means for later milestones:
+- **Token budget → raw text:** 2.5B tokens ≈ 11.5 GB of FineWeb-Edu text, about
+  a quarter of `sample-10BT`. That matches the earlier ~2.7B-token download estimate.
+- **Tokenizing the full dataset:** 2.5B ÷ 0.83M/s ≈ 50 min single-process, or
+  ~10–15 min on 6 processes. A C extension isn't needed.
+- Training took seconds, not the estimated 10–40 min, because 300 MB of English
+  has only ~645K distinct chunks. Retraining on more data (for example 1 GB) is
+  cheap if we ever want to.
+
+Known, accepted weaknesses (all expected for an English-web vocab of 32k):
+- **Code indentation**: runs of spaces mostly aren't merged (FineWeb-Edu has
+  little code), so 4-space indentation costs ~3–4 tokens.
+- **Numbers**: the space before a number is its own token (`" "`, `"202"`,
+  `"4"`). This is the price of the GPT-4-style digit split.
+- **Non-Latin scripts** (CJK, emoji) fall back to mostly byte tokens: lossless
+  but 2–4 tokens per character. Fine for an English model.
+
+## 12. Development machine (since 2026-11-06)
+
+Development now runs on a Windows 11 desktop rather than the laptop in §1:
+
+| Item | Value |
+|---|---|
+| CPU | Intel Core i5-9400F, 6 cores / 6 threads, AVX2 + FMA |
+| RAM | 16 GiB |
+| GPU | **NVIDIA GeForce GTX 1650 Super, 4 GiB** (Turing TU116, CUDA). fp16 yes (2× fp32 rate), **no bf16, no tensor cores** |
+| Disk free | ~113 GB (the ~30 GB peak in §6 still fits) |
+| Python | 3.12, venv at `.venv/`, torch 2.14.1+cu130 (CUDA 13.0, compute capability 7.5) |
+
+~~Rough, unmeasured estimate (fp16, ~1 week for `small`)~~: **wrong**, see §13.
+Measured: fp16 is 5× *slower* than fp32 on this card, and `small` would take
+~2 weeks. Renting a GPU for M8 is still the plan. The local GPU runs the
+M6 `tiny` run about 6× faster than the CPU.
+
+Porting notes for this machine:
+- ~~`scripts/benchmark_throughput.py` is Unix-only, CPU-only~~: fixed in M4. It now
+  uses the real model and supports CUDA, fp16/bf16 and activation checkpointing.
+- `torch.compile` on CUDA needs Triton, which has no official Windows build. The M6
+  trainer falls back to eager mode when compile isn't available (decision 24).
+- `scripts/check_env.py` reads `/proc`. On Windows it reports less detail but runs.
+- Windows consoles default to cp1252. Run scripts that print non-ASCII text with
+  `PYTHONIOENCODING=utf-8` (or `python -X utf8`).
+
+## 13. Milestone 4 results: model
+
+`aupus/model/` holds `layers.py` (RMSNorm, RoPE, GQA attention + KV cache,
+SwiGLU), `transformer.py` and `generate.py`. These are verified by `tests/test_model.py`:
+
+- **Parameter count** of the real modules equals the analytic `param_count` for
+  every preset, tied and untied (`small` = 125,264,640).
+- **Forward FLOPs** measured with `torch.utils.flop_counter` match
+  `flops_per_token` to within 1%, so MFU numbers in training will be right.
+- **Initial loss** ≈ ln(vocab), so the init is sane. The causal mask holds (a
+  future token can't change past logits), and RoPE attention scores depend only
+  on relative position.
+- **KV cache:** prefill + chunk + one-token decoding give the same logits as a
+  full forward pass. Greedy generation matches a cache-free reference.
+- **Gradient checkpointing** gives identical gradients.
+- **Overfit one batch** (`debug` shape): loss 9.0 → < 0.05 in 100 AdamW steps (~6 s on CPU).
+- fp16 autocast step on the GPU: finite gradients, loss matches CPU.
+
+### Measured training throughput (context 1024, full step incl. AdamW, eager)
+
+| Preset | Device / precision | Micro-batch | Checkpointing | Tokens/s | Achieved TFLOPS | Peak VRAM |
+|---|---|---|---|---|---|---|
+| `tiny` | CPU i5-9400F, fp32 | 4 | no | 1,253 | 0.28 | (3.7 GiB RAM) |
+| `tiny` | GTX 1650 Super, fp16 | 4 | no | 2,087 | 0.47 | 2.6 GiB |
+| `tiny` | GTX 1650 Super, **fp32** | 2 | no | **7,479** | 1.67 | 1.7 GiB |
+| `tiny` | GTX 1650 Super, fp32 | 4 | no | 6,814 | 1.52 | 2.9 GiB |
+| `small` | GTX 1650 Super, fp16 | 1 | no | 576 | 0.48 | 2.7 GiB |
+| `small` | GTX 1650 Super, **fp32** | 1 | no | **2,138** | 1.77 | 2.8 GiB |
+| `small` | GTX 1650 Super, fp32 | 2 | yes | 1,811 | 1.50 | 2.3 GiB |
+| `small` | GTX 1650 Super, fp32 | 4 | yes | 1,163 | 0.96 | 3.1 GiB |
+
+Findings:
+- **fp16 is a trap on this card.** Raw matmul is 0.5 TFLOPS in fp16 vs 2.6–3.0 in fp32.
+- **VRAM headroom is ~2.9 GiB**, not 4: the Windows desktop holds ~0.9 GiB.
+  Above that, WDDM silently spills into system RAM (reported "peak VRAM"
+  goes over 4 GiB) and throughput collapses 2–4×. Configs must stay under ~2.8 GiB.
+- `small` on this GPU: 2.5B tokens ÷ ~2,000 tok/s ≈ **14–15 days** non-stop.
+  A rented RTX 4090 / A100 does it in ~5–9 h for ~$5–10, so **M8 stays on a
+  rented GPU** (decision 1 is still formally decided before M7).
+- **M6 `tiny` e2e run goes on the local GPU in fp32**: ~7,000 tok/s means the
+  planned ~2M-token run takes ~5 min instead of ~25 min on the CPU, and a
+  longer 25M-token run (enough to see real samples improve) takes ~1 h.
+
+## 14. Milestone 5 results: data pipeline
+
+Full details are in `docs/DATA.md`. In short, on the 300 MB FineWeb-Edu sample
+(61,842 docs):
+
+| | |
+|---|---|
+| Kept | 99.36% of documents (filters 0.62%, exact dups 4, near dups 12) |
+| Tokens | 64.8M train + 0.33M val |
+| Throughput | 6.1 MB/s raw text on 6 processes, so **~32 min** for M7's ~11.5 GB (plus download) |
+
+This sample (`data/pretrain/sample`) is also the M6 dataset: 65M tokens is
+plenty for the `tiny` end-to-end run (a few million to ~25M tokens).
+
+## 15. Milestone 6 results: pretraining loop and `tiny` end-to-end run
+
+`aupus/train/` holds `config.py` (strict `TrainConfig`), `optim.py` (AdamW
+groups, warmup + cosine), `checkpoint.py` (atomic full-state checkpoints) and
+`pretrain.py` (the loop). `scripts/train.py` is the CLI. `tests/test_train.py`
+checks:
+
+- **Resume is bit-identical:** a run stopped by Ctrl-C at step 3 and resumed to
+  step 6 ends with exactly the same weights as an uninterrupted run (CPU, `torch.equal`).
+  Resuming on CUDA is tested separately (it found a real bug, see below).
+- **Gradient accumulation:** 4 × 1 and 2 × 2 micro-batches give the same update.
+- Loss falls from ln(vocab) on a tiny dataset made by the real M5 pipeline;
+  weight decay hits only Linear weights; the LR schedule's shape; checkpoint
+  pruning; refusing to overwrite a run; no duplicate metrics after a resume; the
+  eager fallback when `torch.compile` can't work; the CLI end to end.
+
+### The run (`configs/train/tiny.yaml`)
+
+`tiny` (34.1M params) at context 512, batch 4 × 8 accum × 512 = 16,384
+tokens/step, 1,200 steps = 19.7M tokens (0.3 epochs of the M5 sample), peak LR
+1e-3 → 1e-4, GTX 1650 Super, fp32, eager (no Triton on Windows).
+
+| Step | Tokens | Train loss | Val loss | Val ppl |
+|---|---|---|---|---|
+| 0 | 0 | — | 10.48 | 35,490 (≈ uniform over 32k) |
+| 100 | 1.6M | 6.69 | 6.64 | 767 |
+| 200 | 3.3M | 6.09 | 6.11 | 452 |
+| 400 | 6.6M | 5.57 | 5.60 | 271 |
+| 600 | 9.8M | 5.29 | 5.33 | 207 |
+| 800 | 13.1M | 5.08 | 5.14 | 171 |
+| 1000 | 16.4M | 4.96 | 5.02 | 151 |
+| 1200 | 19.7M | 4.90 | **4.95** | **141** |
+
+- **Throughput:** ~8,000 tok/s (1.71 TFLOPS), dropping to ~7,600 in the last
+  ~200 steps (probably heat). Peak VRAM 1.77 GiB. Wall time ~44 min including
+  13 evals (~7 s each), samples and 6 saves.
+- **Val tracks train** (gap ≤ 0.05) because no window is seen twice in 0.3 epochs.
+  The loss is still falling at the end; this run was sized to check the
+  pipeline, not to converge.
+- **Samples** (same seed every time, so only the model changes). Prompt "In 1492, Christopher Columbus":
+  - step 0: `overnight overnight250Dem placebo clips legal Linda…` (random tokens)
+  - step 200: `is an overview. The results were shown that it was a number of all time…`
+  - step 1200: `was an officer. He was a professor of medicine, a professor and a biologist from the University of Virginia…`
+
+  By step 1200 the text is grammatical, stays on topic for a sentence or two,
+  and is factually meaningless, as expected for 34M params and 20M tokens.
+- **Crash recovery on real data:** the process was force-killed at step ~455
+  (no clean save) and resumed from `step_000400.pt`. Steps 410–450 reproduced
+  the killed run's loss and grad norm exactly to the printed 4 decimals on the
+  GPU, and `metrics.jsonl` has every step once.
+- **Bug found and fixed:** the first resume on the GPU failed.
+  `torch.load(map_location="cuda")` also moves the saved RNG byte tensors to
+  the GPU, and `torch.set_rng_state` only accepts CPU tensors. The CPU-only tests
+  couldn't see this, so `test_resume_on_cuda` was added (skipped in CI).
+- Disk: 391 MB per checkpoint, 1.6 GB for the run directory (3 kept + `best.pt`).
+
+What this means for later milestones:
+- The training stack is ready for M8. On the rented GPU, first run
+  `scripts/benchmark_throughput.py` to choose `micro_batch` for
+  `configs/train/small.yaml` (256 sequences/step in total), then a ~50-step
+  smoke run of that config.
+- `small` checkpoints will be ~1.5 GB each, ~6 GB for a run (as in §6). Copy
+  `runs/aupus-0.1-base/` off the box regularly.

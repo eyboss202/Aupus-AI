@@ -9,9 +9,11 @@ dist/
 .ruff_cache/
 
 # Data, checkpoints, logs and release weights never go in git.
-# (The hand-written SFT identity set is the one exception; it is reviewed and small.)
+# (Exceptions: the hand-written SFT identity set and the trained tokenizer, both small and reviewed.)
 data/*
 !data/identity.jsonl
+# The trained tokenizer is small (~0.5 MB), deterministic and needed by every later step, so it is tracked.
+!data/tokenizer/
 checkpoints/
 runs/
 release/

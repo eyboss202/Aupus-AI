@@ -1,0 +1,214 @@
+"""Tests for inference: release export/load, streaming text, repetition penalty, generate and chat."""
+
+from __future__ import annotations
+
+import argparse
+import io
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+import torch
+
+from aupus.cli import chat as chat_cli
+from aupus.cli import generate as generate_cli
+from aupus.cli.streaming import TextStream
+from aupus.model import ModelConfig, Transformer, generate
+from aupus.model.generate import apply_repetition_penalty
+from aupus.model.io import export_release, load_model
+from aupus.tokenizer import EOS, Tokenizer
+from aupus.tokenizer.chat import prompt_ids
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+# ---------------------------------------------------------------- release format
+
+
+def logits_of(model, n=20):
+    x = torch.arange(n)[None] % model.cfg.vocab_size
+    with torch.no_grad():
+        return model(x).logits
+
+
+def test_export_roundtrip_is_exact_in_fp32(tiny_run, tmp_path):
+    out = export_release(tiny_run.checkpoint, tmp_path / "rel")
+    assert sorted(p.name for p in out.iterdir()) == [
+        "model.safetensors",
+        "model.yaml",
+        "release.json",
+        "tokenizer.json",
+    ]
+    info = json.loads((out / "release.json").read_text())
+    assert info["step"] == 40 and info["stage"] == "pretrain" and info["dtype"] == "fp32"
+    assert set(info["sha256"]) == {"model.safetensors", "model.yaml", "tokenizer.json"}
+    ckpt, rel = load_model(tiny_run.checkpoint), load_model(out)
+    assert torch.equal(logits_of(ckpt.model), logits_of(rel.model))
+    assert rel.tokenizer.encode("The cat") == ckpt.tokenizer.encode("The cat")
+    assert rel.info["kind"] == "release" and not rel.model.training
+
+
+@pytest.mark.parametrize("dtype", ["fp16", "bf16"])
+def test_half_precision_export_is_smaller_and_close(tiny_run, tmp_path, dtype):
+    full = export_release(tiny_run.checkpoint, tmp_path / "fp32")
+    half = export_release(tiny_run.checkpoint, tmp_path / dtype, dtype=dtype)
+    assert (half / "model.safetensors").stat().st_size < 0.6 * (full / "model.safetensors").stat().st_size
+    diff = (logits_of(load_model(full).model) - logits_of(load_model(half).model)).abs().max()
+    assert 0 < diff < 0.1
+
+
+def test_export_refuses_to_overwrite(tiny_run, tmp_path):
+    export_release(tiny_run.checkpoint, tmp_path / "rel")
+    with pytest.raises(FileExistsError, match="not empty"):
+        export_release(tiny_run.checkpoint, tmp_path / "rel")
+    export_release(tiny_run.checkpoint, tmp_path / "rel", overwrite=True)
+    with pytest.raises(ValueError, match="dtype"):
+        export_release(tiny_run.checkpoint, tmp_path / "other", dtype="int8")
+
+
+def test_load_checks_the_tokenizer(tiny_run):
+    other = ROOT / "data" / "tokenizer" / "aupus-bpe-32k.json"
+    with pytest.raises(ValueError, match="SHA-256"):
+        load_model(tiny_run.checkpoint, tokenizer_path=other)
+
+
+def test_export_script(tiny_run, tmp_path):
+    cmd = [
+        sys.executable,
+        str(ROOT / "scripts" / "export_release.py"),
+        "--checkpoint",
+        str(tiny_run.checkpoint),
+    ]
+    proc = subprocess.run([*cmd, "--out", str(tmp_path / "rel")], capture_output=True, text=True, cwd=ROOT)
+    assert proc.returncode == 0, proc.stderr
+    assert "max logit difference vs checkpoint: 0.00e+00" in proc.stdout
+    assert (tmp_path / "rel" / "LICENSE").exists()
+
+
+# ---------------------------------------------------------------- streaming + sampling
+
+
+def test_text_stream_never_splits_a_character(tiny_run):
+    tok = Tokenizer.load(tiny_run.tokenizer)
+    ids = tok.encode("café 🙂 ok")  # é and 🙂 are multi-byte; this small vocab keeps them as byte tokens
+    stream = TextStream(tok)
+    pieces = [stream.push(i) for i in ids]
+    assert "".join(pieces) + stream.flush() == "café 🙂 ok"
+    assert "�" not in "".join(pieces)
+    assert "" in pieces  # some byte tokens completed nothing on their own
+    assert stream.push(tok.special_id(EOS)) == ""
+
+
+def test_repetition_penalty():
+    logits = torch.tensor([2.0, -2.0, 1.0, 0.5])
+    out = apply_repetition_penalty(logits, torch.tensor([0, 1]), 2.0)
+    assert out.tolist() == [1.0, -4.0, 1.0, 0.5]  # both seen tokens become less likely
+    assert torch.equal(apply_repetition_penalty(logits, torch.tensor([0]), 1.0), logits)
+
+
+def test_strong_penalty_stops_greedy_repetition():
+    torch.manual_seed(0)
+    cfg = ModelConfig(
+        vocab_size=50, d_model=32, n_layers=2, n_heads=2, n_kv_heads=1, ffn_hidden=64, context_length=64
+    )
+    model = Transformer(cfg)
+    plain = generate(model, [1, 2, 3], 30, temperature=0)
+    assert len(set(plain)) < len(plain)  # an untrained model repeats itself
+    penalised = generate(model, [1, 2, 3], 30, temperature=0, repetition_penalty=1e6)
+    assert len(set(penalised)) == len(penalised) and not set(penalised) & {1, 2, 3}
+    with pytest.raises(ValueError, match="repetition_penalty"):
+        generate(model, [1], 3, repetition_penalty=0)
+
+
+# ---------------------------------------------------------------- generate
+
+
+def test_generate_cli_is_reproducible_and_greedy_matches_the_library(tiny_run):
+    def run(*extra):
+        out = io.StringIO()
+        generate_cli.main(
+            ["--model", str(tiny_run.checkpoint), "--prompt", "The cat", "--device", "cpu", *extra], out
+        )
+        return out.getvalue()
+
+    seeded = run("--seed", "3", "-n", "12")
+    assert seeded.startswith("The cat") and seeded == run("--seed", "3", "-n", "12")
+    greedy = run("--temperature", "0", "--repetition-penalty", "1", "-n", "12")
+    loaded = load_model(tiny_run.checkpoint)
+    tok = loaded.tokenizer
+    eos = tok.special_id(EOS)
+    expected = generate(loaded.model, [eos, *tok.encode("The cat")], 12, temperature=0, stop_ids=[eos])
+    assert greedy == "The cat" + tok.decode(expected, skip_special=True) + "\n"
+
+
+# ---------------------------------------------------------------- chat
+
+
+def chat_args(**kw):
+    defaults = {
+        "system": None,
+        "max_new_tokens": 8,
+        "temperature": 0.0,
+        "top_k": 0,
+        "top_p": 1.0,
+        "repetition_penalty": 1.0,
+        "seed": None,
+    }
+    return argparse.Namespace(**{**defaults, **kw})
+
+
+def scripted(lines):
+    it = iter(lines)
+
+    def read_line(_prompt):
+        try:
+            return next(it)
+        except StopIteration:
+            raise EOFError from None
+
+    return read_line
+
+
+def test_chat_loop_keeps_history_and_handles_commands(tiny_run):
+    loaded = load_model(tiny_run.checkpoint)
+    out = io.StringIO()
+    inputs = ["The cat", "", "/nope", "The dog", "/reset", "A tree", "/exit", "never read"]
+    history = chat_cli.chat_loop(loaded, chat_args(system="Be brief."), scripted(inputs), out)
+    text = out.getvalue()
+    assert "Base model" in text and "unknown command /nope" in text and "(conversation cleared)" in text
+    assert [m["role"] for m in history] == ["system", "user", "assistant"]
+    assert history[0]["content"] == "Be brief." and history[1]["content"] == "A tree"
+
+
+def test_chat_reply_equals_greedy_generation_from_the_template(tiny_run):
+    loaded = load_model(tiny_run.checkpoint)
+    tok = loaded.tokenizer
+    messages = [{"role": "user", "content": "The cat"}]
+    reply, dropped = chat_cli.respond(loaded, messages, 8, io.StringIO(), temperature=0.0)
+    ids = generate(loaded.model, prompt_ids(tok, messages), 8, temperature=0)
+    assert dropped == 0 and reply == tok.decode(ids, skip_special=True).strip()
+
+
+def test_fit_history_drops_oldest_exchanges_first(tiny_run):
+    tok = Tokenizer.load(tiny_run.tokenizer)
+    long = "The cat and the dog " * 5
+    messages = [{"role": "system", "content": "Hi."}]
+    for i in range(6):
+        messages += [{"role": "user", "content": f"{long} {i}"}, {"role": "assistant", "content": long}]
+    messages.append({"role": "user", "content": "last"})
+    ids, kept = chat_cli.fit_history(tok, messages, window=200, reserve=20)
+    assert len(ids) + 20 <= 200
+    assert kept[0] == messages[0] and kept[-1] == messages[-1]  # system and newest turn survive
+    assert kept[1:] == messages[len(messages) - len(kept) + 1 :]  # what's kept is the most recent run
+    with pytest.raises(ValueError, match="too long"):
+        chat_cli.fit_history(tok, [{"role": "user", "content": long * 20}], window=64, reserve=8)
+
+
+def test_chat_reports_a_message_that_cannot_fit(tiny_run):
+    loaded = load_model(tiny_run.checkpoint)  # context window 64
+    out = io.StringIO()
+    history = chat_cli.chat_loop(loaded, chat_args(), scripted(["The cat " * 100, "The dog"]), out)
+    assert "too long" in out.getvalue()
+    assert [m["content"] for m in history if m["role"] == "user"] == ["The dog"]

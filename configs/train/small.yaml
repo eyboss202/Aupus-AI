@@ -1,7 +1,8 @@
 # Milestone 8: Aupus 0.1 Base (`small`, 125.3M params) on ~2.5B FineWeb-Edu tokens (docs/PLAN.md §4).
-# DRAFT until the rented GPU is benchmarked: micro_batch x grad_accum must stay 256 sequences
-# (262,144 tokens/step); pick micro_batch from scripts/benchmark_throughput.py on that GPU
-# (e.g. 16 x 16 on 24 GB, 32 x 8 on 80 GB).
+# DRAFT: training happens on the GTX 1650 Super desktop (docs/PLAN.md decision 1), where this
+# config would take ~2 weeks (§13), so model size and token budget are revisited before M8.
+# micro_batch x grad_accum must stay 256 sequences (262,144 tokens/step); on that GPU pick
+# micro_batch with scripts/benchmark_throughput.py and keep peak VRAM under ~2.8 GiB.
 run_name: aupus-0.1-base
 model: small
 data_dir: data/pretrain/fineweb_edu

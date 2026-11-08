@@ -10,7 +10,7 @@ from aupus.data.config import DataConfig, DedupConfig, FilterConfig
 from aupus.data.dedup import Deduplicator, MinHasher, estimated_jaccard, exact_hash
 from aupus.data.filters import check
 from aupus.data.normalize import normalize
-from aupus.data.pipeline import iter_fineweb_edu, iter_jsonl, prepare
+from aupus.data.pipeline import iter_fineweb_edu, iter_jsonl, iter_parquet, prepare
 from aupus.data.shards import ShardWriter, check_tokenizer, is_val, open_split
 
 __all__ = [
@@ -29,6 +29,7 @@ __all__ = [
     "is_val",
     "iter_fineweb_edu",
     "iter_jsonl",
+    "iter_parquet",
     "normalize",
     "open_split",
     "prepare",

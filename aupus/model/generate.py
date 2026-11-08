@@ -13,6 +13,10 @@ Sampling controls:
   * ``top_p`` (nucleus sampling, Holtzman et al. 2019): only the smallest set of
     tokens whose probabilities add up to at least p may be picked. It adapts to
     how confident the model is, so it's usually better than a fixed k.
+  * ``repetition_penalty`` (Keskar et al. 2019, "CTRL"): makes every token that
+    already appears in the prompt or the output less likely, by dividing its
+    logit by the penalty if positive and multiplying if negative. Small models
+    easily get stuck repeating a phrase; 1.1-1.2 helps. ``1.0`` disables it.
 """
 
 from __future__ import annotations
@@ -23,6 +27,14 @@ import torch
 
 from aupus.model.layers import KVCache
 from aupus.model.transformer import Transformer
+
+
+def apply_repetition_penalty(logits: torch.Tensor, seen: torch.Tensor, penalty: float) -> torch.Tensor:
+    """Penalise the token ids in ``seen`` (a 1-D id tensor) in a (vocab,) logits vector."""
+    if penalty == 1.0 or seen.numel() == 0:
+        return logits
+    picked = logits[seen]
+    return logits.scatter(0, seen, torch.where(picked > 0, picked / penalty, picked * penalty))
 
 
 def sample_next(
@@ -62,12 +74,15 @@ def stream(
     top_p: float | None = None,
     stop_ids: Iterable[int] = (),
     generator: torch.Generator | None = None,
+    repetition_penalty: float = 1.0,
 ) -> Iterator[int]:
     """Yield generated token ids one at a time (the prompt is not repeated).
 
     Stops after ``max_new_tokens``, after yielding a token in ``stop_ids``, or
     when the context window is full.
     """
+    if repetition_penalty <= 0:
+        raise ValueError(f"repetition_penalty must be > 0, got {repetition_penalty}")
     if not prompt:
         raise ValueError("prompt must contain at least one token (e.g. <|bos|>)")
     cfg = model.cfg
@@ -82,10 +97,15 @@ def stream(
         cache = KVCache(cfg, batch_size=1, device=device, dtype=dtype)
         idx = torch.tensor([list(prompt)], dtype=torch.long, device=device)
         pos = 0
+        seen = torch.zeros(cfg.vocab_size, dtype=torch.bool, device=device)
+        seen[idx[0]] = True
         for _ in range(min(max_new_tokens, cfg.context_length - len(prompt))):
             logits = model(idx, kv_cache=cache, start_pos=pos).logits[0, -1]
             pos += idx.shape[1]
+            if repetition_penalty != 1.0:
+                logits = apply_repetition_penalty(logits, seen.nonzero()[:, 0], repetition_penalty)
             token = sample_next(logits, temperature, top_k, top_p, generator)
+            seen[token] = True
             yield token
             if token in stops:
                 return

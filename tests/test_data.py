@@ -24,6 +24,7 @@ from aupus.data import (
     eval_batches,
     exact_hash,
     is_val,
+    iter_parquet,
     normalize,
     open_split,
     prepare,
@@ -364,6 +365,26 @@ def test_prepare_is_identical_with_workers(tmp_path, tokenizer_path):
         a = (tmp_path / "one" / f"{split}_00000.bin").read_bytes()
         b = (tmp_path / "two" / f"{split}_00000.bin").read_bytes()
         assert a == b
+
+
+def test_parquet_source_matches_in_memory(tmp_path, tokenizer_path):
+    """Local parquet files give the same documents, in the same order, as the list they came from."""
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    corpus = make_corpus()
+    # Two files, written out of name order, with an extra column and small row groups.
+    for name, part in (("001_00000.parquet", corpus[200:]), ("000_00000.parquet", corpus[:200])):
+        table = pa.table({"id": list(range(len(part))), "text": part})
+        pq.write_table(table, tmp_path / name, row_group_size=37)
+    paths = sorted(tmp_path.glob("*.parquet"))
+    assert list(iter_parquet(paths, batch_rows=10)) == corpus
+
+    cfg = DataConfig(val_fraction=0.1)
+    prepare(corpus, tmp_path / "list", tokenizer_path, cfg)
+    prepare(iter_parquet(paths), tmp_path / "parquet", tokenizer_path, cfg)
+    for split in ("train", "val"):
+        a = (tmp_path / "list" / f"{split}_00000.bin").read_bytes()
+        assert a == (tmp_path / "parquet" / f"{split}_00000.bin").read_bytes()
 
 
 def test_shipped_data_config_loads():

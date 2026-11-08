@@ -47,7 +47,7 @@ import torch
 
 from aupus.config import save_config, to_dict
 from aupus.data.loader import PretrainLoader, eval_batches
-from aupus.data.shards import check_tokenizer, open_split
+from aupus.data.shards import check_tokenizer, file_sha256, open_split
 from aupus.model import ModelConfig, Transformer, flops_per_token, param_count, stream
 from aupus.tokenizer import EOS, Tokenizer
 from aupus.train import checkpoint
@@ -114,14 +114,24 @@ class Trainer:
         resume: continue from the newest checkpoint in ``cfg.run_dir``. Without it,
             a run directory that already has checkpoints is an error (no silent overwrites).
         log: where human-readable progress lines go (also appended to ``train.log``).
+
+    Supervised fine-tuning (``aupus/train/sft.py``) reuses this loop. It overrides
+    the few methods that depend on the data: ``_resolve_configs``, ``_setup_data``,
+    ``_init_weights``, ``_make_loader``, ``evaluate``, ``_sample_prompt``,
+    ``_format_sample``, ``_data_metrics`` and ``_describe_data``. Setting
+    ``_halt_reason`` ends the run cleanly after the current step (early stopping).
     """
 
+    #: Recorded in checkpoints, so a model's history is visible (``pretrain`` or ``sft``).
+    stage = "pretrain"
+
     def __init__(self, cfg: TrainConfig, resume: bool = False, log: Callable[[str], None] = print) -> None:
-        self.cfg, self.model_cfg = resolve_model_config(cfg)
+        self._print = log
+        self.cfg, self.model_cfg = self._resolve_configs(cfg)
         cfg = self.cfg
         self.run_dir = cfg.run_dir
-        self._print = log
         self._stop_requested = False
+        self._halt_reason: str | None = None  # set to stop training early (SFT early stopping)
 
         existing = checkpoint.latest_checkpoint(self.run_dir)
         if resume and existing is None:
@@ -139,26 +149,27 @@ class Trainer:
             torch.backends.cuda.matmul.allow_tf32 = True  # TF32 matmuls on Ampere+; no effect on older GPUs
             torch.backends.cudnn.allow_tf32 = True
 
-        # Data and tokenizer must match each other and the model.
-        meta, _ = open_split(cfg.data_dir, "train")
-        check_tokenizer(meta, cfg.tokenizer)
-        self.tokenizer = Tokenizer.load(cfg.tokenizer)
+        self._setup_data()
         if self.tokenizer.vocab_size > self.model_cfg.vocab_size:
             raise ValueError(
                 f"tokenizer has {self.tokenizer.vocab_size} ids, "
                 f"but the model only has {self.model_cfg.vocab_size}"
             )
         self.eos_id = self.tokenizer.special_id(EOS)
+        self.tokenizer_sha256 = file_sha256(cfg.tokenizer)
 
         random.seed(cfg.seed)
         torch.manual_seed(cfg.seed)
         self.model = Transformer(self.model_cfg).to(self.device)
+        if not resume:
+            self._init_weights()
         self.model.gradient_checkpointing = cfg.grad_checkpointing
         self.optimizer = make_optimizer(self.model, cfg.optim, self.device)
         self.scaler = torch.amp.GradScaler(self.device.type, enabled=self.precision == "fp16")
-        self.loader = PretrainLoader(cfg.data_dir, "train", cfg.micro_batch, cfg.seq_len, cfg.seed)
+        self.loader = self._make_loader()
         self.step = 0
         self.best_val_loss = math.inf
+        self.evals_since_best = 0  # consecutive evals without a new best (early stopping)
 
         if resume:
             self._load(existing)
@@ -166,6 +177,46 @@ class Trainer:
         save_config(self.model_cfg, self.run_dir / "model.yaml")
         self.run = self._maybe_compile()
         self._tb = None
+
+    # ------------------------------------------------------------ data hooks (SFT overrides these)
+
+    def _resolve_configs(self, cfg: TrainConfig) -> tuple[TrainConfig, ModelConfig]:
+        return resolve_model_config(cfg)
+
+    def _setup_data(self) -> None:
+        """Load the tokenizer; check the shards were made with it."""
+        meta, _ = open_split(self.cfg.data_dir, "train")
+        check_tokenizer(meta, self.cfg.tokenizer)
+        self.tokenizer = Tokenizer.load(self.cfg.tokenizer)
+
+    def _init_weights(self) -> None:
+        """Pretraining starts from the random init in ``Transformer.reset_parameters``."""
+
+    def _make_loader(self) -> PretrainLoader:
+        cfg = self.cfg
+        return PretrainLoader(cfg.data_dir, "train", cfg.micro_batch, cfg.seq_len, cfg.seed)
+
+    def _sample_prompt(self, prompt: str) -> tuple[list[int], list[int]]:
+        """Prompt ids and stop ids for one text sample."""
+        # A new document starts right after <|eos|> in the training data, so that's the "start" token.
+        return [self.eos_id, *self.tokenizer.encode(prompt)], [self.eos_id]
+
+    def _format_sample(self, prompt: str, generated: str) -> str:
+        return prompt + generated
+
+    def _data_metrics(self) -> dict[str, float]:
+        """Extra ``data/*`` values for each training log record."""
+        return {"data/tokens_seen": self.step * self.cfg.tokens_per_step}
+
+    def _describe_data(self) -> str:
+        cfg = self.cfg
+        total = cfg.tokens_per_step * cfg.max_steps
+        return (
+            f"batch {cfg.micro_batch} x {cfg.grad_accum} accum x {cfg.seq_len} = {cfg.tokens_per_step:,} "
+            f"tokens/step | {cfg.max_steps:,} steps = {total / 1e6:.1f}M tokens "
+            f"({total / (self.loader.num_windows * cfg.seq_len):.2f} epochs "
+            f"of {self.loader.num_windows:,} windows)"
+        )
 
     # ------------------------------------------------------------ setup helpers
 
@@ -223,8 +274,12 @@ class Trainer:
             "loader": self.loader.state_dict(),
             "rng": checkpoint.rng_state(),
             "best_val_loss": self.best_val_loss,
+            "evals_since_best": self.evals_since_best,
             "train_config": to_dict(self.cfg),
             "model_config": to_dict(self.model_cfg),
+            "stage": self.stage,
+            # Lets later steps (SFT, eval, release export) check they use the same tokenizer.
+            "tokenizer_sha256": self.tokenizer_sha256,
         }
 
     def save(self) -> Path:
@@ -247,6 +302,7 @@ class Trainer:
         checkpoint.set_rng_state(state["rng"])
         self.step = state["step"]
         self.best_val_loss = state["best_val_loss"]
+        self.evals_since_best = state.get("evals_since_best", 0)  # absent before Milestone 10
         # Steps after this checkpoint will be trained again: drop their old metrics
         # (TensorBoard does the same via purge_step).
         metrics = self.run_dir / "metrics.jsonl"
@@ -280,8 +336,7 @@ class Trainer:
         gen = torch.Generator(device=self.device)
         for i, prompt in enumerate(self.cfg.sample_prompts):
             gen.manual_seed(self.cfg.seed + i)
-            # A new document starts right after <|eos|> in the training data, so that's the "start" token.
-            ids = [self.eos_id, *self.tokenizer.encode(prompt)]
+            ids, stop_ids = self._sample_prompt(prompt)
             new = list(
                 stream(
                     self.model,
@@ -289,11 +344,11 @@ class Trainer:
                     self.cfg.sample_tokens,
                     temperature=0.8,
                     top_k=50,
-                    stop_ids=[self.eos_id],
+                    stop_ids=stop_ids,
                     generator=gen,
                 )
             )
-            out.append(prompt + self.tokenizer.decode(new, skip_special=True))
+            out.append(self._format_sample(prompt, self.tokenizer.decode(new, skip_special=True)))
         return out
 
     # ------------------------------------------------------------ logging
@@ -318,6 +373,7 @@ class Trainer:
         t0 = time.perf_counter()
         val = self.evaluate()
         improved = val < self.best_val_loss
+        self.evals_since_best = 0 if improved else self.evals_since_best + 1
         if improved:
             self.best_val_loss = val
             checkpoint.save(self.state_dict(), self.run_dir / checkpoint.BEST)
@@ -367,13 +423,7 @@ class Trainer:
             f"device {device} | precision {self.precision} | compiled {self.compiled} | "
             f"grad checkpointing {cfg.grad_checkpointing}"
         )
-        total = cfg.tokens_per_step * cfg.max_steps
-        self.log(
-            f"batch {cfg.micro_batch} x {cfg.grad_accum} accum x {cfg.seq_len} = {cfg.tokens_per_step:,} "
-            f"tokens/step | {cfg.max_steps:,} steps = {total / 1e6:.1f}M tokens "
-            f"({total / (self.loader.num_windows * cfg.seq_len):.2f} epochs "
-            f"of {self.loader.num_windows:,} windows)"
-        )
+        self.log(self._describe_data())
 
     def _train_loop(self) -> dict[str, Any]:
         cfg = self.cfg
@@ -388,7 +438,7 @@ class Trainer:
 
         start_step, t_run = self.step, time.perf_counter()
         window_loss = torch.zeros((), device=self.device)
-        window_steps, window_time = 0, 0.0
+        window_steps, window_tokens, window_time = 0, 0, 0.0
         last_loss = math.nan
         while self.step < cfg.max_steps:
             t0 = time.perf_counter()
@@ -396,6 +446,7 @@ class Trainer:
             set_lr(self.optimizer, lr)
             for _ in range(cfg.grad_accum):
                 x, y = next(self.loader)
+                window_tokens += x.numel()  # SFT batches vary in length; pretraining's never do
                 x, y = x.to(self.device, non_blocking=True), y.to(self.device, non_blocking=True)
                 with self._autocast():
                     loss = self.run(x, y).loss / cfg.grad_accum
@@ -416,7 +467,7 @@ class Trainer:
                 window_time += time.perf_counter() - t0
                 if not math.isfinite(last_loss):
                     raise FloatingPointError(f"loss is {last_loss} at step {self.step}; stopping")
-                tok_s = window_steps * cfg.tokens_per_step / window_time
+                tok_s = window_tokens / window_time
                 record = {
                     "step": self.step,
                     "train/loss": last_loss,
@@ -425,36 +476,41 @@ class Trainer:
                     "perf/tokens_per_sec": tok_s,
                     "perf/tflops": tok_s * flops_per_tok / 1e12,
                     "data/epoch": self.loader.epoch,
-                    "data/tokens_seen": self.step * cfg.tokens_per_step,
+                    **self._data_metrics(),
                 }
                 if self.device.type == "cuda":
                     record["perf/peak_mem_gib"] = torch.cuda.max_memory_allocated(self.device) / 1024**3
                 self._metrics(record)
-                eta = (cfg.max_steps - self.step) * cfg.tokens_per_step / tok_s
+                eta = (cfg.max_steps - self.step) * window_time / window_steps
                 self.log(
                     f"step {self.step:6d} | loss {last_loss:.4f} | lr {lr:.2e} | "
                     f"gnorm {float(grad_norm):6.3f} | "
                     f"{tok_s:8,.0f} tok/s | {record['perf/tflops']:.2f} TFLOPS | eta {_hms(eta)}"
                 )
                 window_loss.zero_()
-                window_steps, window_time = 0, 0.0
+                window_steps, window_tokens, window_time = 0, 0, 0.0
             else:
                 window_time += time.perf_counter() - t0
 
             if cfg.eval_every and (self.step % cfg.eval_every == 0 or last):
                 self._do_eval()
-            if cfg.sample_every and cfg.sample_prompts and (self.step % cfg.sample_every == 0 or last):
+            halt = self._stop_requested or self._halt_reason is not None
+            final = last or self._halt_reason is not None  # the run is over (not just paused by Ctrl-C)
+            if cfg.sample_every and cfg.sample_prompts and (self.step % cfg.sample_every == 0 or final):
                 self._do_samples()
-            if (cfg.save_every and self.step % cfg.save_every == 0) or last or self._stop_requested:
+            if (cfg.save_every and self.step % cfg.save_every == 0) or last or halt:
                 path = self.save()
                 self.log(f"saved {path}")
-            if self._stop_requested:
+            if self._halt_reason is not None:
+                self.log(f"stopping at step {self.step}: {self._halt_reason}")
+            if halt:
                 break
 
         elapsed = time.perf_counter() - t_run
         return {
             "step": self.step,
-            "finished": self.step >= cfg.max_steps,
+            "finished": self.step >= cfg.max_steps or self._halt_reason is not None,
+            "early_stopped": self._halt_reason is not None,
             "train_loss": last_loss,
             "best_val_loss": self.best_val_loss,
             "steps_this_session": self.step - start_step,

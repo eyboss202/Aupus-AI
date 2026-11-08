@@ -52,8 +52,29 @@ FINEWEB_EDU_SUBSET = "sample-10BT"
 FINEWEB_EDU_REVISION = "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9"
 
 
+def iter_parquet(paths: Iterable[str | Path], field: str = "text", batch_rows: int = 1024) -> Iterator[str]:
+    """Yield the ``field`` column of each parquet file in turn, row by row.
+
+    Files are read in the order given and rows in file order, which is the same
+    order ``datasets`` streams them in. That way a local copy of FineWeb-Edu gives
+    the same documents in the same order as :func:`iter_fineweb_edu`. Only the
+    one column is read, ``batch_rows`` rows at a time, so memory stays small
+    even though each file is ~2 GB. Needs ``pyarrow`` (installed with ``.[data]``).
+    """
+    import pyarrow.parquet as pq
+
+    for path in paths:
+        for batch in pq.ParquetFile(path).iter_batches(batch_size=batch_rows, columns=[field]):
+            yield from batch.column(0).to_pylist()
+
+
 def iter_fineweb_edu(revision: str = FINEWEB_EDU_REVISION) -> Iterator[str]:
-    """Stream FineWeb-Edu documents (needs the optional ``datasets`` dependency)."""
+    """Stream FineWeb-Edu documents (needs the optional ``datasets`` dependency).
+
+    Fine for small samples. For the full Milestone 7 set, download the parquet
+    files first (``scripts/download_fineweb_edu.py``) and use :func:`iter_parquet`:
+    a dropped connection then costs one resumed file, not the whole run.
+    """
     from datasets import load_dataset
 
     for record in load_dataset(FINEWEB_EDU, name=FINEWEB_EDU_SUBSET, split="train", streaming=True, revision=revision):

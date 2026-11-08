@@ -9,9 +9,10 @@ at the end.
 | Source | Used for | License | Status |
 |---|---|---|---|
 | [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) `sample-10BT`, revision `87f0914` | Tokenizer training (300 MB), pretraining (~2.5B tokens) | ODC-By 1.0 | Tokenizer sample and M5 sample prepared; full set in M7 |
-| OpenAssistant oasst1 + oasst2 (English, top-ranked branches) | SFT | Apache-2.0 | Milestone 10 |
-| Databricks Dolly 15k | SFT | CC BY-SA 3.0 | Milestone 10 |
-| `data/identity.jsonl` (hand-written) | SFT | Apache-2.0 | Milestone 10 |
+| [OpenAssistant oasst2](https://huggingface.co/datasets/OpenAssistant/oasst2), revision `179dd21` (English, top-ranked branches) | SFT | Apache-2.0 | Converted: 5,270 conversations |
+| [Databricks Dolly 15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k), revision `bdd27f4` | SFT | CC BY-SA 3.0 | Converted: 15,011 conversations |
+| `data/identity.jsonl` (hand-written) | SFT | Apache-2.0 | **To be written** (see below) |
+| HellaSwag, ARC-Easy, PIQA | Evaluation only, never training | MIT / CC BY-SA 4.0 / AFL-3.0 | Converted (see below) |
 
 Only human-written, openly licensed text is used. No LLM-generated instruction
 data and no other model's outputs. English Wikipedia was considered and
@@ -107,6 +108,72 @@ in larger samples.
 of processing at this rate, plus the download time. Peak RAM is the dedup set
 (~3 GB) plus workers (~0.3 GB each).
 
+## Fine-tuning data (Milestone 10)
+
+`scripts/prepare_sft_data.py` → `aupus/data/sft.py`. It writes
+`data/sft/{train,val}.jsonl` (one `{"id", "source", "messages"}` conversation
+per line) and `data/sft/stats.json`.
+
+- **oasst2**: message trees written and ranked by volunteers. We keep messages
+  that are English, not deleted and passed review. From each root prompt we follow
+  the best-ranked reply at every level (prompter follow-ups aren't ranked, so the
+  earliest one is taken), and end on an assistant turn. oasst2 already contains
+  oasst1: only 8 of oasst1's 88,838 messages are missing from it, so oasst1
+  isn't downloaded separately.
+- **Identity filter**: a conversation in which the *assistant* calls itself Open
+  Assistant or mentions LAION is dropped (130 of 5,401 trees), so Aupus doesn't
+  learn another assistant's name.
+- **Dolly**: user turn = instruction, plus the reference passage after a blank
+  line when there is one. Wikipedia citation marks like `[12]` are removed.
+- All text goes through the pretraining `normalize`.
+- **Split**: 5% val by hash of the conversation id. Identity conversations all go
+  to train, repeated 3× (they are a tiny share of the set).
+
+Measured (2026-11-08, without an identity file yet):
+
+| | Conversations | Train / val | Mean tokens | Cut at 1,024 tokens |
+|---|---|---|---|---|
+| oasst2 (English top-1 branches) | 5,270 | 5,005 / 265 | 432 | 333 (6%) |
+| Dolly 15k | 15,011 | 14,271 / 740 | 169 | 213 (1%); 126 dropped (no reply left) |
+| **Total** | 20,281 | 19,276 / 1,005 | | ≈ 4.8M tokens per epoch, 3.2M of them in replies |
+
+A conversation longer than the context window keeps its first 1,024 tokens. The
+loss is only on assistant replies and the `<|end|>` that closes each one (chat
+template: `aupus/tokenizer/chat.py`).
+
+**Licensing note.** Dolly is CC BY-SA 3.0 (share-alike), the same kind of license
+that led us to leave Wikipedia out of pretraining (decision 4). To train without it:
+`python scripts/prepare_sft_data.py --sources oasst2,identity`.
+
+### `data/identity.jsonl`
+
+The only training text in git. A few dozen short conversations that tell the
+model what it is, so "who are you?" gets a true answer: its name, that it is a
+small open-source model built from scratch as a learning project, that it can be
+wrong, has no internet access and doesn't remember past chats. **It must be
+written by a person**, like all training data here: no model-generated text.
+One conversation per line:
+
+```json
+{"messages": [{"role": "user", "content": "What is your name?"}, {"role": "assistant", "content": "I'm Aupus, a small language model."}]}
+```
+
+Vary the wording of the questions (that is what makes it generalise) and keep the
+answers consistent and modest. `prepare_sft_data.py` validates every line.
+
+## Evaluation data (Milestone 9)
+
+`scripts/download_eval_data.py` writes `data/eval/<task>.jsonl` with
+`{"id", "context", "choices", "label"}` per question, at pinned revisions. The
+prompt formats are lm-evaluation-harness's, so results are comparable with
+published numbers (`aupus/eval/tasks.py`).
+
+| Task | Source (revision) | Split | Questions | License |
+|---|---|---|---|---|
+| HellaSwag | `Rowan/hellaswag` (`218ec52`) | validation | 10,042 | MIT |
+| ARC-Easy | `allenai/ai2_arc` (`210d026`) | test | 2,376 | CC BY-SA 4.0 |
+| PIQA | `baber/piqa` (`142f6d7`), parquet copy of `ybisk/piqa` | validation | 1,838 | AFL-3.0 |
+
 ## Dataset format
 
 ```
@@ -143,4 +210,12 @@ to run on a mismatch.
 pip install -e ".[data]"
 python scripts/download_tokenizer_sample.py                  # 300 MB + 10 MB, pinned revision
 python scripts/prepare_data.py --input data/tokenizer_sample/train.jsonl --out data/pretrain/sample
+
+# Milestone 7, the full set: download the pinned parquet files (resumable, SHA-256 checked), then process
+python scripts/download_fineweb_edu.py --files 4                 # 8.6 GB, ~2.9M documents
+python scripts/prepare_data.py --source parquet --input data/raw/fineweb_edu --out data/pretrain/fineweb_edu
+
+# Milestones 9 and 10: benchmarks (~7 MB) and fine-tuning conversations (~80 MB download)
+python scripts/download_eval_data.py
+python scripts/prepare_sft_data.py
 ```

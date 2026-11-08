@@ -13,13 +13,14 @@ import copy
 import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from aupus.config import ConfigError, from_dict, load_yaml
 from aupus.model.config import ModelConfig
 
 PRECISIONS = ("auto", "fp32", "bf16", "fp16")
 DEVICES = ("auto", "cpu", "cuda")
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -125,19 +126,7 @@ class TrainConfig:
     def from_dict(
         cls, data: dict[str, Any], overrides: dict[str, Any] | None = None, source: str = "config"
     ) -> TrainConfig:
-        data = copy.deepcopy(data)
-        for key, value in (overrides or {}).items():
-            *parents, leaf = key.split(".")
-            node = data
-            for p in parents:
-                node = node.setdefault(p, {})
-                if not isinstance(node, dict):
-                    raise ConfigError(f"override {key}: {p} is not a mapping")
-            node[leaf] = value
-        try:
-            return from_dict(cls, data)
-        except ConfigError as e:
-            raise ConfigError(f"{source}: {e}") from None
+        return build_with_overrides(cls, data, overrides, source)
 
     @property
     def run_dir(self) -> Path:
@@ -149,6 +138,29 @@ class TrainConfig:
         if self.seq_len is None:
             raise ValueError("seq_len is not resolved yet")
         return self.micro_batch * self.grad_accum * self.seq_len
+
+
+def build_with_overrides(
+    cls: type[T], data: dict[str, Any], overrides: dict[str, Any] | None = None, source: str = "config"
+) -> T:
+    """Build config dataclass ``cls`` from ``data`` after applying ``key=value`` overrides.
+
+    Override keys may be dotted (``optim.lr``) to reach nested settings; sibling
+    keys of a nested mapping are kept.
+    """
+    data = copy.deepcopy(data)
+    for key, value in (overrides or {}).items():
+        *parents, leaf = key.split(".")
+        node = data
+        for p in parents:
+            node = node.setdefault(p, {})
+            if not isinstance(node, dict):
+                raise ConfigError(f"override {key}: {p} is not a mapping")
+        node[leaf] = value
+    try:
+        return from_dict(cls, data)
+    except ConfigError as e:
+        raise ConfigError(f"{source}: {e}") from None
 
 
 def resolve_model_config(cfg: TrainConfig) -> tuple[TrainConfig, ModelConfig]:

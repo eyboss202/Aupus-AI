@@ -1,0 +1,30 @@
+# Milestone 10: Aupus 0.1 Instruct = Aupus 0.1 Base fine-tuned on ~20K human-written conversations
+# (oasst2 English top-1 branches + Dolly 15k + data/identity.jsonl), loss on replies only (docs/PLAN.md §4).
+# DRAFT until the M8 model size is decided: micro_batch must fit the GPU. 4 x 1024 tokens with
+# gradient checkpointing should fit `small` on the 4 GiB GTX 1650 Super; check peak_mem_gib in the log.
+run_name: aupus-0.1-instruct
+init_from: runs/aupus-0.1-base/best.pt
+data_dir: data/sft
+micro_batch: 4
+grad_accum: 8          # 32 conversations per optimizer step, ~630 steps per epoch
+epochs: 3              # an upper bound: early stopping usually ends the run sooner
+patience: 3            # stop after 3 evaluations (300 steps) without a better val loss
+optim:
+  lr: 3.0e-5           # ~1/20 of pretraining's peak: adjust the model, don't overwrite it
+  min_lr: 3.0e-6
+  warmup_steps: 50
+  weight_decay: 0.1
+precision: auto        # fp32 on the GTX 1650 Super (docs/PLAN.md decision 13)
+compile: true
+grad_checkpointing: true
+eval_every: 100
+save_every: 200
+keep_last: 2
+log_every: 10
+sample_every: 200
+sample_tokens: 128
+sample_prompts:
+  - "What is a prime number?"
+  - "Who are you?"
+  - "Give me three tips for learning to read."
+  - "Why is the sky blue?"

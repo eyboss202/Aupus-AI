@@ -9,11 +9,12 @@ model libraries.
 It is also a learning project. The code is meant to be read: docstrings explain
 *why* each piece exists, not just what it does.
 
-> **Status: pre-alpha, under construction.** The tokenizer, model, data pipeline and
-> pretraining loop are written and tested, and a small `tiny` model has been trained end to
-> end as a check. Aupus 0.1 itself hasn't been trained yet. The roadmap below shows what
-> exists today. Weights will be published on GitHub Releases once trained; they are never
-> committed to this repository.
+> **Status: pre-alpha.** Every stage is written and tested: tokenizer, data pipeline,
+> pretraining, evaluation, fine-tuning, chat and release export. A small `tiny` model has been
+> trained end to end as a check. Aupus 0.1 itself hasn't been trained yet. The roadmap below
+> shows what exists today. Weights will be published on GitHub Releases once trained; they are
+> never committed to this repository. What the models are and aren't good for:
+> [`MODEL_CARD.md`](MODEL_CARD.md).
 
 ## Why from scratch?
 
@@ -68,12 +69,12 @@ The full plan, hardware analysis and measured throughput are in
 | 4 | Model architecture (+ overfit test) | ✅ done |
 | 5 | Data pipeline on a small sample | ✅ done |
 | 6 | Pretraining loop + end-to-end `tiny` run | ✅ done |
-| 7 | Full data preparation | ⏳ next |
-| 8 | Aupus 0.1 Base pretraining | |
-| 9 | Evaluation harness + results | |
-| 10 | Supervised fine-tuning → Aupus 0.1 Instruct | |
-| 11 | `generate` / `chat` CLI, release export | |
-| 12 | Model card, data card, contributing guide | |
+| 7 | Full data preparation | 🚧 code ready, run pending (on the GTX 1650 desktop) |
+| 8 | Aupus 0.1 Base pretraining | ⏳ model size to decide, then train on the GTX 1650 desktop |
+| 9 | Evaluation harness + results | 🚧 harness done; results need the trained model |
+| 10 | Supervised fine-tuning → Aupus 0.1 Instruct | 🚧 code and data done; run needs Base (and `data/identity.jsonl`) |
+| 11 | `generate` / `chat` CLI, release export | ✅ done |
+| 12 | Model card, data card, contributing guide | 🚧 drafts done; results filled in after training |
 
 ## Getting started (development)
 
@@ -131,6 +132,10 @@ See [`docs/DATA.md`](docs/DATA.md) for every rule and the measured results.
 
 ```bash
 python scripts/prepare_data.py --input data/tokenizer_sample/train.jsonl --out data/pretrain/sample
+
+# Full set for Aupus 0.1 (Milestone 7): 8.6 GB download, then ~20-90 min of CPU depending on --workers
+python scripts/download_fineweb_edu.py --files 4
+python scripts/prepare_data.py --source parquet --input data/raw/fineweb_edu --out data/pretrain/fineweb_edu
 ```
 
 ### Training
@@ -169,7 +174,42 @@ for the prompt "In 1492, Christopher Columbus":
 Fluent-looking and factually meaningless, as expected for that size. Details are in
 [`docs/PLAN.md`](docs/PLAN.md) §15.
 
-Chat commands will be documented here once Milestone 11 lands.
+### Evaluation
+
+Zero-shot HellaSwag, ARC-Easy and PIQA (the answer the model finds most likely wins) and
+validation perplexity / bits per byte. Prompt formats follow lm-evaluation-harness, so
+results are comparable with published numbers.
+
+```bash
+python scripts/download_eval_data.py                     # ~7 MB, pinned revisions -> data/eval/
+python scripts/evaluate.py --model runs/tiny/best.pt --val-data data/pretrain/sample
+python scripts/evaluate.py --model runs/tiny/best.pt --tasks piqa --limit 200      # quick look
+```
+
+### Fine-tuning (Base → Instruct)
+
+Human-written conversations (OpenAssistant oasst2, Dolly 15k, a hand-written identity set),
+loss only on the assistant's replies, early stopping on validation loss
+([`docs/DATA.md`](docs/DATA.md) has the sources and filters).
+
+```bash
+python scripts/prepare_sft_data.py                                       # ~80 MB -> data/sft/
+python scripts/sft.py --config configs/sft/aupus-0.1-instruct.yaml       # starts from runs/aupus-0.1-base/best.pt
+python scripts/sft.py --resume runs/aupus-0.1-instruct
+```
+
+### Chat, generation and release
+
+```bash
+python scripts/chat.py --model runs/aupus-0.1-instruct/best.pt           # /reset, /exit; Ctrl-C stops a reply
+python scripts/generate.py --model runs/tiny/best.pt --prompt "The water cycle is"
+python scripts/export_release.py --checkpoint runs/aupus-0.1-instruct/best.pt --out release/aupus-0.1-instruct
+python scripts/chat.py --model release/aupus-0.1-instruct                # releases load the same way
+```
+
+A release directory holds weights only (`model.safetensors`, fp32 or `--dtype bf16`), the model
+config, the tokenizer, `release.json` (source checkpoint, step, val loss, SHA-256s), the license
+and the model card.
 
 ## Repository layout
 
@@ -179,15 +219,18 @@ aupus/          the Python package
   tokenizer/    byte-level BPE: pre-tokenizer, trainer, encode/decode
   data/         normalise, filters, dedup, shards, resumable dataloader
   model/        config + size/FLOP accounting, layers, transformer, KV-cache generation
-  train/        pretraining loop, AdamW + LR schedule, checkpoints (SFT: milestone 10)
-  eval/         perplexity + benchmarks        (milestone 9)
-  cli/          generate / chat                (milestone 11)
+  train/        pretraining loop, SFT, AdamW + LR schedule, checkpoints
+  eval/         perplexity, bits per byte, HellaSwag / ARC-Easy / PIQA
+  cli/          generate / chat
 configs/model/  model presets: debug (~6.5M), tiny (~34M), small (~125M), base (~348M)
 configs/data/   data-pipeline settings (filters, dedup, split, shard size)
-configs/train/  training-run configs: tiny (M6 check), small (Aupus 0.1 Base, M8)
+configs/train/  pretraining-run configs: tiny (M6 check), small (Aupus 0.1 Base, M8)
+configs/sft/    fine-tuning configs: aupus-0.1-instruct (M10)
 scripts/        entry points
 tests/          pytest suite (runs on CPU in CI)
 docs/           PLAN.md (plan, measurements, decisions), DATA.md (sources, pipeline)
+MODEL_CARD.md   what the models are, how they were made, limitations
+CONTRIBUTING.md setup, checks and the project's rules
 ```
 
 Data, checkpoints, logs and release weights stay out of git (see `.gitignore`).

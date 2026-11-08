@@ -1,8 +1,10 @@
 # Aupus 0.1 — Phase 0 Plan
 
 Status: **approved** (2026-11-04). Decisions are recorded in §10.
-Progress: Milestones 1–6 done (tokenizer §11, model §13, data pipeline §14, pretraining loop §15; all 2026-11-06). Development moved to a
-new machine on 2026-11-06 (§12).
+Progress: Milestones 1–6 done (tokenizer §11, model §13, data pipeline §14, pretraining loop §15; all 2026-11-06).
+Milestone 7: code ready, the full run is pending and will happen on the desktop (§16). Milestones 9–12: code,
+tests and docs done ahead of training (2026-11-08, §17); their real runs need the trained Base model.
+Development moved to a new machine on 2026-11-06 (§12).
 Date: 2026-11-04
 
 ## 1. Detected hardware (from `scripts/check_env.py`)
@@ -157,12 +159,12 @@ separators.
 | 4 | Model + tests (overfit `debug`) | desktop | done: overfit test ~6 s on CPU; CUDA benchmark (§13) |
 | 5 | Data pipeline on a small sample | desktop | done: 300 MB in 49 s → 64.8M tokens (§14) |
 | 6 | Pretraining loop + `tiny` e2e run | desktop GPU | done: 1,200 steps / 19.7M tokens in ~42 min (§15) |
-| 7 | Full data prep (**ask first**) | laptop or GPU box | ~1–3 h, ~10 GB download |
-| 8 | Aupus 0.1 Base pretraining (**ask first**) | rented GPU | ~5–9 h |
-| 9 | Eval harness (HellaSwag, ARC-Easy, PIQA, val ppl) | rented GPU or laptop | <1 h |
-| 10 | SFT → Aupus 0.1 Instruct | rented GPU | <1 h |
-| 11 | generate/chat CLI, release export | laptop | — (CPU inference of 125M is fast enough) |
-| 12 | README, MODEL_CARD, DATA, CONTRIBUTING | laptop | — |
+| 7 | Full data prep (**ask first**) | desktop | code ready (§16); 8.6 GB download (~45 min) + ~20–90 min CPU |
+| 8 | Aupus 0.1 Base pretraining (**ask first**) | desktop GTX 1650 Super (decision 1) | ~2 weeks for `small` (§13); size/budget to revisit |
+| 9 | Eval harness (HellaSwag, ARC-Easy, PIQA, val ppl) | desktop GPU or laptop | code done (§17); a full eval of `tiny` takes ~10 min on the laptop CPU |
+| 10 | SFT → Aupus 0.1 Instruct | desktop GPU | code + data done (§17); ~14M tokens for 3 epochs: ~2 h for `small` on the GTX, less with early stopping |
+| 11 | generate/chat CLI, release export | laptop | done (§17) |
+| 12 | README, MODEL_CARD, DATA, CONTRIBUTING | laptop | drafts done (§17); results filled in after M8–M10 |
 
 ## 8. Honest quality expectations
 
@@ -193,7 +195,7 @@ These are ballpark figures based on published results for similarly sized models
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | Where to train Base (M7–M10) | **Decide before Milestone 7.** Milestones 2–6 run on the laptop |
+| 1 | Where to train Base (M7–M10) | **On the user's own desktop (GTX 1650 Super), no rented GPU** (2026-11-08). `small` was measured at ~2 weeks there (§13), so model size and token budget are revisited before M8 |
 | 2 | YAML parser | **`pyyaml` allowed** (the one dependency added beyond the spec's list). Our loader adds YAML 1.2 float parsing so `lr: 3e-4` is a float, not a string |
 | 3 | `uv` | Pending. Until then a plain `python -m venv .venv` + `pip install -e ".[dev]"` is used; `pyproject.toml` is uv-compatible, so switching later only adds a `uv.lock` |
 | 4 | Wikipedia slice | **No.** FineWeb-Edu only for 0.1 (simplest licensing) |
@@ -204,7 +206,7 @@ These are ballpark figures based on published results for similarly sized models
 | 9 | Special tokens | `<\|bos\|>` `<\|eos\|>` `<\|pad\|>` `<\|system\|>` `<\|user\|>` `<\|assistant\|>` `<\|end\|>` (ids 31993–31999). `encode` treats them as plain text unless `allow_special=True`, so typed-in control strings can't hijack the chat format |
 | 10 | Pre-tokenization regex | GPT-2's pattern rebuilt with the standard-library `re` (no `regex` dependency), plus numbers split into groups of ≤ 3 digits and newline chunks (from GPT-4 / Llama 3). Lossless by construction; fuzz-tested |
 | 11 | Tokenizer in git | `data/tokenizer/aupus-bpe-32k.{json,vocab.txt,stats.json}` (~1 MB) are tracked: small, deterministic, needed by every later step. The training sample isn't tracked; the download script pins the FineWeb-Edu revision so it can be rebuilt exactly |
-| 12 | Where M7 data prep runs | **Locally** (desktop, §12): measured tokenization speed makes it ~10–15 min of CPU; download and dedup dominate. Still "ask first" because of the ~10 GB download |
+| 12 | Where M7 data prep runs | **The desktop** (§12), where training happens, so the ~5 GB of shards never need copying. A first attempt on the laptop was stopped because of fan noise (§16). Still "ask first" because of the 8.6 GB download |
 | 13 | Precision on GTX 16xx / Turing without tensor cores | **fp32.** Measured fp16 matmul is 0.5 TFLOPS vs 2.6–3.0 fp32 (cuBLAS has no fast fp16 path without tensor cores). bf16 autocast stays the default on Ampere+ rented GPUs; fp16 + GradScaler only where fp16 is actually fast (T4) |
 | 14 | Attention kernel | `F.scaled_dot_product_attention`, with GQA K/V heads expanded by view before the call rather than SDPA's `enable_gqa` (the memory-efficient kernel used on pre-Ampere GPUs doesn't support it). The KV cache stores the un-expanded 4 heads |
 | 15 | Model API | `Transformer(cfg)(idx, targets) -> Output(logits, loss)`; `targets == -100` is ignored (padding, SFT prompt tokens); `gradient_checkpointing` flag per model; `generate` / `stream` in `aupus.model.generate` |
@@ -219,6 +221,16 @@ These are ballpark figures based on published results for similarly sized models
 | 24 | `torch.compile` | `compile: true` means "where supported": skipped without Triton (CUDA) or without a C++ compiler (CPU), and a dummy forward + backward is compiled before the first real step so a toolchain failure falls back to eager instead of crashing mid-step. On this Windows machine it is always eager |
 | 25 | Sampling during training | Prompts start with `<\|eos\|>` (pretraining data has no `<\|bos\|>`; a new document starts after `<\|eos\|>`). Temperature 0.8, top-k 50, a fixed seed per prompt, so samples change only because the model does |
 | 26 | Weight decay groups | Decay on `nn.Linear` weights only; none on RMSNorm gains or the (tied) embedding |
+| 27 | M7 data source | **Download the parquet files first, then process them locally** (`scripts/download_fineweb_edu.py`, then `prepare_data.py --source parquet`) instead of streaming into the pipeline: an interrupted download resumes per file, each file's SHA-256 is checked against the Hub, and a network drop can't kill a long processing run |
+| 28 | M7 size | **First 4 `sample-10BT` files** (8.6 GB, ~2.9M documents) for the 2.5B-token budget |
+| 29 | Benchmark formats | lm-evaluation-harness's prompts and splits (HellaSwag val, ARC-Easy test, PIQA val), zero-shot, scored by log-likelihood. Report `acc` and `acc_norm` (log-prob / characters); the context starts with `<\|eos\|>` (decision 25). PIQA from `baber/piqa`, the parquet copy lm-eval uses, because `ybisk/piqa` only has a loading script |
+| 30 | Checkpoint provenance | Since M10, checkpoints also store `stage` (`pretrain`/`sft`) and the tokenizer's SHA-256, which SFT, eval and export check. Older checkpoints load without them |
+| 31 | SFT sources | **oasst2 only** (it contains all but 8 of oasst1's messages), English, top-1 branch per tree; conversations where the assistant names Open Assistant/LAION dropped; Dolly with citation marks removed; the identity set repeated 3×; 5% val by hash of the id. Dolly's CC BY-SA 3.0 is share-alike like Wikipedia's (decision 4): **open question for the user**, `--sources` can leave it out |
+| 32 | Chat template | `<\|eos\|>` then `<role> text <\|end\|>` per turn, no extra whitespace; loss on reply tokens and their `<\|end\|>` only; content never encoded with special tokens |
+| 33 | SFT training | Same `Trainer` loop via small hooks (no copy of the loop). Padded batches, length-grouped (groups of 50 batches sorted by length, then shuffled). Conversations longer than the context keep their first 1,024 tokens. LR 3e-5 → 3e-6, up to 3 epochs, early stopping after 3 evals without a better val loss. Each micro-batch's loss is a mean over its own reply tokens (standard simplification) |
+| 34 | Release format | Directory with `model.safetensors` (weights only, fp32 by default, fp16/bf16 optional), `model.yaml`, `tokenizer.json`, `release.json` (source, step, val loss, SHA-256s), `LICENSE`, `MODEL_CARD.md`. The export script reloads it and compares logits |
+| 35 | Chat CLI | Whole conversation re-encoded each turn; oldest user/assistant pairs dropped when it no longer fits (system message and newest turn kept). Defaults: temperature 0.7, top-p 0.95, top-k 50, repetition penalty 1.1 (CTRL-style, new in `generate.py`, off by default in the library) |
+| 36 | Identity data | Written by the user, not generated: the project's own rule is "no LLM-generated training data", and an assistant writing them would break it. Format and guidance in docs/DATA.md |
 
 ## 11. Milestone 3 results: tokenizer
 
@@ -266,7 +278,7 @@ Development now runs on a Windows 11 desktop rather than the laptop in §1:
 
 ~~Rough, unmeasured estimate (fp16, ~1 week for `small`)~~: **wrong**, see §13.
 Measured: fp16 is 5× *slower* than fp32 on this card, and `small` would take
-~2 weeks. Renting a GPU for M8 is still the plan. The local GPU runs the
+~2 weeks. M8 will still train here, with no rented GPU (decision 1, 2026-11-08). The local GPU runs the
 M6 `tiny` run about 6× faster than the CPU.
 
 Porting notes for this machine:
@@ -315,8 +327,8 @@ Findings:
   Above that, WDDM silently spills into system RAM (reported "peak VRAM"
   goes over 4 GiB) and throughput collapses 2–4×. Configs must stay under ~2.8 GiB.
 - `small` on this GPU: 2.5B tokens ÷ ~2,000 tok/s ≈ **14–15 days** non-stop.
-  A rented RTX 4090 / A100 does it in ~5–9 h for ~$5–10, so **M8 stays on a
-  rented GPU** (decision 1 is still formally decided before M7).
+  A rented RTX 4090 / A100 would do it in ~5–9 h for ~$5–10, but **M8 trains
+  here anyway** (decision 1, 2026-11-08), with the model size and token budget revisited first.
 - **M6 `tiny` e2e run goes on the local GPU in fp32**: ~7,000 tok/s means the
   planned ~2M-token run takes ~5 min instead of ~25 min on the CPU, and a
   longer 25M-token run (enough to see real samples improve) takes ~1 h.
@@ -392,9 +404,82 @@ tokens/step, 1,200 steps = 19.7M tokens (0.3 epochs of the M5 sample), peak LR
 - Disk: 391 MB per checkpoint, 1.6 GB for the run directory (3 kept + `best.pt`).
 
 What this means for later milestones:
-- The training stack is ready for M8. On the rented GPU, first run
-  `scripts/benchmark_throughput.py` to choose `micro_batch` for
-  `configs/train/small.yaml` (256 sequences/step in total), then a ~50-step
-  smoke run of that config.
-- `small` checkpoints will be ~1.5 GB each, ~6 GB for a run (as in §6). Copy
-  `runs/aupus-0.1-base/` off the box regularly.
+- The training stack is ready for M8, which runs on the desktop GTX 1650 Super
+  (decision 1). Once the model size and token budget are settled, run
+  `scripts/benchmark_throughput.py` there to choose `micro_batch` (staying under
+  ~2.8 GiB of VRAM, §13), then a ~50-step smoke run of that config.
+- `small` checkpoints will be ~1.5 GB each, ~6 GB for a run (as in §6). Back up
+  `runs/aupus-0.1-base/` to another disk regularly during a multi-day run.
+
+## 16. Milestone 7: full data preparation (code ready, run pending)
+
+Done on the laptop (2026-11-08):
+
+- `scripts/download_fineweb_edu.py` downloads the first `--files N` parquet files of
+  `sample-10BT` at the pinned revision (13 × 2.15 GB + one 0.54 GB file, ~726K
+  documents each) and checks each file's SHA-256 (decision 27).
+- `aupus.data.iter_parquet` reads them column-only, in batches, in the same order
+  `datasets` streams them. Checked on the real data: the first 2,000 documents of
+  `000_00000.parquet` are identical, in order, to the first 2,000 streamed ones. A test
+  checks that the parquet source gives byte-identical shards.
+- Measured: the 4-file download took 45 min (~3.2 MB/s, 8.61 GB, all checksums OK).
+  Processing on 8 workers (Ryzen 7730U) ran at ~2,200 docs/s, so ~22 min for the whole
+  set, but it was stopped after 2½ minutes because of the laptop's fan noise. The data
+  was deleted; M7 runs again from scratch on the desktop.
+
+To run it on the desktop (ask first):
+
+```bash
+pip install -e ".[data]"
+python scripts/download_fineweb_edu.py --files 4    # 8.6 GB, resumable
+python scripts/prepare_data.py --source parquet --input data/raw/fineweb_edu --out data/pretrain/fineweb_edu --workers 4
+```
+
+With `--workers 4` on the i5-9400F, expect roughly 35–45 min (the M5 rate was
+6.1 MB/s on 6 processes). Fewer workers are quieter and slower. The pipeline
+doesn't resume, so an interrupted run starts over (the download doesn't need repeating).
+Peak RAM is ~3 GB for the dedup sets plus ~0.3 GB per worker.
+
+## 17. Milestones 9–12 ahead of training (2026-11-08)
+
+Everything that doesn't need the trained Base model was built and tested on the
+laptop, so the desktop only has to run things. 205 tests pass in ~16 s on CPU.
+
+**M9: evaluation** (`aupus/eval/`, `scripts/download_eval_data.py`, `scripts/evaluate.py`).
+- Log-likelihood scoring with batched, right-padded requests; the tests check it
+  against a manual forward pass and that batching never changes a score.
+- Validation loss, perplexity and bits per byte (`evaluate_loss`), on the same
+  windows as the training loop's eval.
+- Real benchmark files converted (10,042 / 2,376 / 1,838 questions); the
+  context/continuation token split is clean on all of them.
+- A *random* `tiny` model scores at chance, as it should (200 questions each:
+  HellaSwag 27%, ARC-Easy 24.5%, PIQA 49.5%). Speed on the laptop CPU: ~22
+  HellaSwag questions/s for `tiny`, so a full eval is ~10 min (`small`: roughly 4× that).
+- `aupus/model/io.py` loads either a training checkpoint or a release directory.
+
+**M10: fine-tuning** (`aupus/tokenizer/chat.py`, `aupus/data/sft.py`, `aupus/train/sft.py`,
+`configs/sft/aupus-0.1-instruct.yaml`, `scripts/prepare_sft_data.py`, `scripts/sft.py`).
+- `Trainer` gained hooks so SFT reuses the loop; pretraining behaviour is unchanged
+  (all M6 tests pass, including bit-identical resume). SFT resume is also bit-identical (tested).
+- Real data prepared: 19,276 train / 1,005 val conversations, ~4.8M tokens per epoch
+  (docs/DATA.md). A 5-step smoke run on the real data with a random `tiny` works end to end.
+- **Missing: `data/identity.jsonl`** (decision 36).
+
+**M11: inference** (`aupus/cli/`, `scripts/generate.py`, `scripts/chat.py`, `scripts/export_release.py`).
+- Streaming output never splits a UTF-8 character; Ctrl-C stops a reply, not the chat.
+- fp32 export reproduces the checkpoint's logits exactly; bf16 halves the size
+  (max logit difference 0.016 on a random `tiny`).
+
+**M12: docs.** `MODEL_CARD.md` (draft, results pending), `CONTRIBUTING.md`,
+docs/DATA.md (SFT and eval data), README.
+
+On the desktop, once Base is trained:
+
+```bash
+python scripts/evaluate.py --model runs/aupus-0.1-base/best.pt --val-data data/pretrain/fineweb_edu
+python scripts/prepare_sft_data.py                       # after writing data/identity.jsonl
+python scripts/sft.py --config configs/sft/aupus-0.1-instruct.yaml
+python scripts/evaluate.py --model runs/aupus-0.1-instruct/best.pt
+python scripts/export_release.py --checkpoint runs/aupus-0.1-instruct/best.pt --out release/aupus-0.1-instruct
+python scripts/chat.py --model release/aupus-0.1-instruct
+```

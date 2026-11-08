@@ -1,4 +1,4 @@
-# Training-run configs
+# Pretraining-run configs
 
 One YAML file per run, loaded into `aupus.train.TrainConfig` (strict: unknown keys are errors).
 Every key and its default is documented in `aupus/train/config.py`.
@@ -6,7 +6,7 @@ Every key and its default is documented in `aupus/train/config.py`.
 | File | Run | Where |
 |---|---|---|
 | `tiny.yaml` | Milestone 6 end-to-end check (`tiny`, 34M params, ~20M tokens of the M5 sample) | local GPU or CPU |
-| `small.yaml` | Milestone 8, Aupus 0.1 Base (`small`, 125M params, 2.5B tokens). Draft until the rented GPU is benchmarked | rented GPU |
+| `small.yaml` | Milestone 8, Aupus 0.1 Base (`small`, 125M params, 2.5B tokens). Draft until the model size and token budget are decided for the GTX 1650 Super (docs/PLAN.md decision 1) | desktop GPU |
 
 ```bash
 python scripts/train.py --config configs/train/tiny.yaml                 # new run -> runs/tiny/
@@ -16,4 +16,4 @@ tensorboard --logdir runs
 ```
 
 Each run saves its fully resolved config (`config.yaml`, `model.yaml`) next to its checkpoints.
-SFT configs are added in Milestone 10.
+Fine-tuning configs live in `configs/sft/` (loaded into `aupus.train.SFTConfig`, run with `scripts/sft.py`).

@@ -8,7 +8,7 @@ at the end.
 
 | Source | Used for | License | Status |
 |---|---|---|---|
-| [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) `sample-10BT`, revision `87f0914` | Tokenizer training (300 MB), pretraining (~2.5B tokens) | ODC-By 1.0 | Tokenizer sample and M5 sample prepared; full set in M7 |
+| [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) `sample-10BT`, revision `87f0914` | Tokenizer training (300 MB), pretraining (~2.5B tokens) | ODC-By 1.0 | Prepared: 2.94B train + 14.6M val tokens (M7) |
 | [OpenAssistant oasst2](https://huggingface.co/datasets/OpenAssistant/oasst2), revision `179dd21` (English, top-ranked branches) | SFT | Apache-2.0 | Converted: 5,270 conversations |
 | [Databricks Dolly 15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k), revision `bdd27f4` | SFT | CC BY-SA 3.0 | Converted: 15,011 conversations |
 | `data/identity.jsonl` (hand-written) | SFT | Apache-2.0 | **To be written** (see below) |
@@ -104,9 +104,44 @@ Few duplicates were found because FineWeb is already deduplicated within each
 crawl. Our pass mainly catches copies *across* crawls, and those only show up
 in larger samples.
 
-**Projection for Milestone 7** (~2.5B tokens ≈ 11.5 GB of raw text): ~32 min
-of processing at this rate, plus the download time. Peak RAM is the dedup set
-(~3 GB) plus workers (~0.3 GB each).
+## Milestone 7 run: the full pretraining set
+
+The first 4 parquet files of `sample-10BT` (8.61 GB, SHA-256 checked), processed on
+the desktop with 3 workers in 68 min (2026-11-09):
+
+```bash
+python scripts/download_fineweb_edu.py --files 4
+python scripts/prepare_data.py --source parquet --input data/raw/fineweb_edu --out data/pretrain/fineweb_edu --workers 3
+```
+
+Results are in `data/pretrain/fineweb_edu/stats.json`:
+
+| | Documents | Share |
+|---|---|---|
+| Input | 2,916,000 | 100% |
+| Dropped by filters | 15,779 | 0.54% |
+| — `ellipsis_lines` | 6,123 | 0.21% |
+| — `bullet_lines` | 4,684 | 0.16% |
+| — `alpha_words` | 3,018 | 0.10% |
+| — `too_short` | 1,151 | 0.04% |
+| — `replacement_chars` | 560 | 0.02% |
+| — other rules (`stop_words` 141, `mean_word_length` 51, `symbol_ratio` 27, `duplicate_lines` 24) | 243 | 0.01% |
+| Exact duplicates | 33,732 | 1.16% |
+| Near duplicates | 21,692 | 0.74% |
+| **Kept** | **2,844,797** | **97.56%** (2,830,585 train / 14,212 val) |
+
+| | |
+|---|---|
+| Tokens | **2,936,424,290 train** (30 shards), **14,644,688 val** (4.60 bytes/token) |
+| Throughput | 4,062 s for 13.9 GB = 3.4 MB/s (718 docs/s) on 3 workers (i5-9400F) |
+| Output | 5.5 GB of shards |
+
+The filters drop about the same share as on the M5 sample, with the same rules on
+top. Duplicates are another story: 1.9% of documents in total, against 0.03% in
+the 300 MB sample, because copies across crawls only show up at this scale.
+
+The 2.94B tokens are more than the 2.5B budget for `small` (0.85 epochs), so a
+2.5B-token run never sees the same window twice.
 
 ## Fine-tuning data (Milestone 10)
 
@@ -159,7 +194,10 @@ One conversation per line:
 ```
 
 Vary the wording of the questions (that is what makes it generalise) and keep the
-answers consistent and modest. `prepare_sft_data.py` validates every line.
+answers consistent and modest. **[`docs/IDENTITY.md`](IDENTITY.md) is the writing guide**: the facts
+to convey, the topics to cover and the style. `python scripts/check_identity.py` checks the file
+(format, length, duplicates, personal details, non-English text); `prepare_sft_data.py` validates
+every line again.
 
 ## Evaluation data (Milestone 9)
 

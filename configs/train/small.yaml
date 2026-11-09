@@ -1,15 +1,15 @@
-# Milestone 8: Aupus 0.1 Base (`small`, 125.3M params) on ~2.5B FineWeb-Edu tokens (docs/PLAN.md §4).
-# DRAFT: training happens on the GTX 1650 Super desktop (docs/PLAN.md decision 1), where this
-# config would take ~2 weeks (§13), so model size and token budget are revisited before M8.
-# micro_batch x grad_accum must stay 256 sequences (262,144 tokens/step); on that GPU pick
-# micro_batch with scripts/benchmark_throughput.py and keep peak VRAM under ~2.8 GiB.
+# Milestone 8: Aupus 0.1 Base (`small`, 125.3M params) on 2.5B FineWeb-Edu tokens (docs/PLAN.md §4),
+# trained on the GTX 1650 Super desktop (decision 1). Sized from the 1-hour pilot (§18,
+# configs/train/small-pilot.yaml): ~1,750 tok/s, so ~150 s per step and ~16-17 days of GPU time.
+# The run stops and resumes freely (Ctrl-C, then `python scripts/train.py --resume runs/aupus-0.1-base`);
+# see docs/TRAINING.md.
 run_name: aupus-0.1-base
 model: small
 data_dir: data/pretrain/fineweb_edu
 seq_len: 1024
-micro_batch: 16
-grad_accum: 16         # 16 x 16 x 1024 = 262,144 tokens per step
-max_steps: 9537        # 9537 x 262,144 = 2.50B tokens (20 tokens/param)
+micro_batch: 1         # with checkpointing: 2.1 GiB peak, leaves ~1 GiB of the 4 GiB card for the desktop
+grad_accum: 256        # 1 x 256 x 1024 = 262,144 tokens per step (§4), ~150 s per step
+max_steps: 9537        # 9537 x 262,144 = 2.50B tokens (20 tokens/param), 0.85 epochs of the M7 data
 optim:
   lr: 6.0e-4
   min_lr: 6.0e-5
@@ -19,14 +19,17 @@ optim:
   beta2: 0.95
   eps: 1.0e-8
   grad_clip: 1.0
-precision: auto        # bf16 on Ampere+
-compile: true
-eval_every: 250
-eval_batches: 100      # 100 x 16 x 1024 = 1.6M val tokens
-save_every: 500
-keep_last: 3
-log_every: 10
-sample_every: 1000
+precision: auto        # fp32 on this GPU (decision 13)
+compile: true          # eager on Windows (no Triton)
+grad_checkpointing: true  # without it the run needs 2.8 GiB and spills into system RAM (4.5x slower) as
+                          # soon as another program uses the GPU (pilot, §18)
+cuda_memory_limit_gib: 2.9  # never reserve more (the run needs ~2.1); leaves ~1 GiB for the desktop (§19)
+eval_every: 40         # ~100 min; 200 batches take ~1 min
+eval_batches: 200      # 200 x 1 x 1024 = 205K val tokens, the same every time
+save_every: 10         # ~25 min: the most a crash or power cut can lose
+keep_last: 3           # 1.5 GB each, ~6 GB with best.pt
+log_every: 1           # one line per ~150 s step
+sample_every: 200      # ~8 h
 sample_tokens: 80
 sample_prompts:
   - "The water cycle is"

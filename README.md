@@ -1,4 +1,40 @@
-# Aupus AI
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wordmark-dark.svg">
+    <img src="docs/assets/wordmark-light.svg" height="72" alt="aupus">
+  </picture>
+</p>
+
+<p align="center">
+  A small English language model, built completely from scratch:<br>
+  tokenizer, model, training and chat, on one home GPU with 4 GB of memory.
+</p>
+
+<p align="center">
+  <a href="https://github.com/eyboss202/Aupus-AI/actions/workflows/ci.yml"><img src="https://github.com/eyboss202/Aupus-AI/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-1d1c22" alt="License: Apache-2.0"></a>
+  <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12-1d1c22" alt="Python 3.11 | 3.12">
+  <img src="https://img.shields.io/badge/PyTorch-plain-1d1c22" alt="Plain PyTorch">
+  <img src="https://img.shields.io/badge/status-pre--alpha-74726b" alt="Status: pre-alpha">
+</p>
+
+<p align="center">
+  <a href="docs/TRAINING.md">Train it yourself</a> ·
+  <a href="MODEL_CARD.md">Model card</a> ·
+  <a href="docs/DATA.md">Data</a> ·
+  <a href="docs/IDENTITY.md">Identity guide</a> ·
+  <a href="docs/PLAN.md">Plan and measurements</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/web-chat-dark.png">
+    <img src="docs/assets/web-chat-light.png" width="760" alt="The Aupus browser chat: &quot;What shall we learn today?&quot;, a message box and four suggested questions">
+  </picture>
+</p>
+
+---
 
 **Aupus 0.1** is a small English language model that writes text and answers simple
 questions, built **completely from scratch**: tokenizer, transformer, training loop,
@@ -10,8 +46,10 @@ It is also a learning project. The code is meant to be read: docstrings explain
 *why* each piece exists, not just what it does.
 
 > **Status: pre-alpha.** Every stage is written and tested: tokenizer, data pipeline,
-> pretraining, evaluation, fine-tuning, chat and release export. A small `tiny` model has been
-> trained end to end as a check. Aupus 0.1 itself hasn't been trained yet. The roadmap below
+> pretraining, evaluation, fine-tuning, chat (terminal and browser) and release export. The
+> 2.94B-token training set is built, a small `tiny` model has been trained end to end, and the
+> real 125M model has run a 1-hour pilot through every later stage on a 4 GB GTX 1650 Super.
+> The full Aupus 0.1 training run (~16–17 days on that GPU) hasn't been done yet. The roadmap below
 > shows what exists today. Weights will be published on GitHub Releases once trained; they are
 > never committed to this repository. What the models are and aren't good for:
 > [`MODEL_CARD.md`](MODEL_CARD.md).
@@ -69,12 +107,12 @@ The full plan, hardware analysis and measured throughput are in
 | 4 | Model architecture (+ overfit test) | ✅ done |
 | 5 | Data pipeline on a small sample | ✅ done |
 | 6 | Pretraining loop + end-to-end `tiny` run | ✅ done |
-| 7 | Full data preparation | 🚧 code ready, run pending (on the GTX 1650 desktop) |
-| 8 | Aupus 0.1 Base pretraining | ⏳ model size to decide, then train on the GTX 1650 desktop |
-| 9 | Evaluation harness + results | 🚧 harness done; results need the trained model |
-| 10 | Supervised fine-tuning → Aupus 0.1 Instruct | 🚧 code and data done; run needs Base (and `data/identity.jsonl`) |
-| 11 | `generate` / `chat` CLI, release export | ✅ done |
-| 12 | Model card, data card, contributing guide | 🚧 drafts done; results filled in after training |
+| 7 | Full data preparation | ✅ done: 2.94B training tokens |
+| 8 | Aupus 0.1 Base pretraining | ⏳ configured (`small`, 2.5B tokens, ~16–17 days on a GTX 1650 Super) and tested with a 1-hour pilot; not started yet |
+| 9 | Evaluation harness + results | 🚧 harness done and tested on the GPU (~14 min per full run); results need the trained model |
+| 10 | Supervised fine-tuning → Aupus 0.1 Instruct | 🚧 code and data done, dry-run on the GPU (~3.5 h); run needs Base (and `data/identity.jsonl`) |
+| 11 | `generate` / `chat` CLI, browser chat, release export | ✅ done |
+| 12 | Model card, data card, contributing and training guides | 🚧 done; the trained model's numbers are filled in after training |
 
 ## Getting started (development)
 
@@ -133,12 +171,22 @@ See [`docs/DATA.md`](docs/DATA.md) for every rule and the measured results.
 ```bash
 python scripts/prepare_data.py --input data/tokenizer_sample/train.jsonl --out data/pretrain/sample
 
-# Full set for Aupus 0.1 (Milestone 7): 8.6 GB download, then ~20-90 min of CPU depending on --workers
+# Full set for Aupus 0.1 (Milestone 7): 8.6 GB download, then ~70 min of CPU with --workers 3
+# (2.94B train tokens, 5.5 GB of shards)
 python scripts/download_fineweb_edu.py --files 4
 python scripts/prepare_data.py --source parquet --input data/raw/fineweb_edu --out data/pretrain/fineweb_edu
 ```
 
 ### Training
+
+**To train Aupus 0.1 yourself, follow [`docs/TRAINING.md`](docs/TRAINING.md)**: a step-by-step
+guide from a fresh clone to a chat model, including how to stop and resume a multi-day run,
+what the log means and what to do when something goes wrong.
+
+```bash
+python scripts/train.py --config configs/train/small.yaml       # Aupus 0.1 Base: 125M params, 2.5B tokens
+python scripts/train.py --resume runs/aupus-0.1-base            # after every Ctrl-C, crash or reboot
+```
 
 One YAML file per run in `configs/train/` (strict: a typo in a key is an error). Any key can
 be overridden on the command line, and dotted keys reach nested settings:
@@ -201,7 +249,8 @@ python scripts/sft.py --resume runs/aupus-0.1-instruct
 ### Chat, generation and release
 
 ```bash
-python scripts/chat.py --model runs/aupus-0.1-instruct/best.pt           # /reset, /exit; Ctrl-C stops a reply
+python scripts/chat_web.py --model release/aupus-0.1-instruct            # chat in the browser: http://127.0.0.1:8000
+python scripts/chat.py --model runs/aupus-0.1-instruct/best.pt           # chat in the terminal: /reset, /exit; Ctrl-C stops a reply
 python scripts/generate.py --model runs/tiny/best.pt --prompt "The water cycle is"
 python scripts/export_release.py --checkpoint runs/aupus-0.1-instruct/best.pt --out release/aupus-0.1-instruct
 python scripts/chat.py --model release/aupus-0.1-instruct                # releases load the same way
@@ -210,6 +259,14 @@ python scripts/chat.py --model release/aupus-0.1-instruct                # relea
 A release directory holds weights only (`model.safetensors`, fp32 or `--dtype bf16`), the model
 config, the tokenizer, `release.json` (source checkpoint, step, val loss, SHA-256s), the license
 and the model card.
+
+The browser chat streams replies as they are written and has a Stop button, a "New chat"
+button and the sampling settings. Replies and the interface are set in Instrument Sans, the
+headings in Newsreader (both under the SIL Open Font License, bundled in `aupus/cli/fonts/`, so the
+page also works offline), in a light or dark theme that follows your system. It runs on your computer only (it listens on 127.0.0.1 and
+refuses requests from other sites). "Save chat" writes the conversation to `data/chats/`
+(never committed) in the format of the fine-tuning data, so you can correct the replies by
+hand and train on them. Chatting never changes the model by itself.
 
 ## Repository layout
 
@@ -221,14 +278,15 @@ aupus/          the Python package
   model/        config + size/FLOP accounting, layers, transformer, KV-cache generation
   train/        pretraining loop, SFT, AdamW + LR schedule, checkpoints
   eval/         perplexity, bits per byte, HellaSwag / ARC-Easy / PIQA
-  cli/          generate / chat
+  cli/          generate / chat in the terminal, chat in the browser (web.py + chat_web.html)
 configs/model/  model presets: debug (~6.5M), tiny (~34M), small (~125M), base (~348M)
 configs/data/   data-pipeline settings (filters, dedup, split, shard size)
 configs/train/  pretraining-run configs: tiny (M6 check), small (Aupus 0.1 Base, M8)
 configs/sft/    fine-tuning configs: aupus-0.1-instruct (M10)
 scripts/        entry points
 tests/          pytest suite (runs on CPU in CI)
-docs/           PLAN.md (plan, measurements, decisions), DATA.md (sources, pipeline)
+docs/           TRAINING.md (how to train it yourself), IDENTITY.md (writing the identity set), PLAN.md, DATA.md
+  assets/       the owl logo (logo.svg; logo-small.svg for small sizes), the wordmark and screenshots
 MODEL_CARD.md   what the models are, how they were made, limitations
 CONTRIBUTING.md setup, checks and the project's rules
 ```
@@ -237,5 +295,6 @@ Data, checkpoints, logs and release weights stay out of git (see `.gitignore`).
 
 ## License
 
-[Apache-2.0](LICENSE). Each training dataset keeps its own license; they are
+[Apache-2.0](LICENSE). The browser chat bundles two typefaces under the SIL Open Font License 1.1:
+Newsreader and Instrument Sans (`aupus/cli/fonts/OFL-*.txt`). Each training dataset keeps its own license; they are
 documented in [`docs/DATA.md`](docs/DATA.md) (and later the model card).

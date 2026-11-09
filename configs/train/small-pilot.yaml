@@ -1,0 +1,34 @@
+# Pilot before Milestone 8: ~1 hour of the real `small` model (125.3M params) on the real M7 data,
+# on the GTX 1650 Super. It measures what the multi-day run depends on: tokens/s and VRAM over an
+# hour (does Windows start spilling VRAM?), GPU heat, whether the loss falls, and a hard-kill +
+# --resume. NOT meant to produce a useful model (~6.5M tokens, 0.2% of the data).
+#
+# Steps are 32K tokens (not M8's 262K), so an hour gives 200 optimizer steps and a real learning
+# curve instead of ~30 steps still in warmup.
+run_name: small-pilot
+model: small
+data_dir: data/pretrain/fineweb_edu
+seq_len: 1024
+micro_batch: 1         # fastest on this GPU: ~2,145 tok/s at 2.8 GiB peak (docs/PLAN.md §13)
+grad_accum: 32         # 1 x 32 x 1024 = 32,768 tokens per step, ~15 s per step
+max_steps: 200         # 6.55M tokens, ~55 min of training
+optim:
+  lr: 6.0e-4
+  min_lr: 6.0e-5
+  warmup_steps: 20
+  weight_decay: 0.1
+  grad_clip: 1.0
+precision: auto        # fp32 on this GPU (decision 13)
+compile: true          # eager on Windows (no Triton)
+eval_every: 25         # ~6 min
+eval_batches: 200      # 200 x 1 x 1024 = 205K val tokens, ~30 s
+save_every: 25         # a hard stop loses at most ~6 min of training
+keep_last: 2           # 1.5 GB per checkpoint
+log_every: 5
+sample_every: 50
+sample_tokens: 60
+sample_prompts:
+  - "The water cycle is"
+  - "In 1492, Christopher Columbus"
+  - "The most important thing to remember when learning to read is"
+  - "A prime number is"

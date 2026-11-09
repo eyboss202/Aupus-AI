@@ -1,5 +1,6 @@
 # Python / tooling
 .venv/
+venv/
 __pycache__/
 *.pyc
 *.egg-info/
@@ -7,19 +8,45 @@ build/
 dist/
 .pytest_cache/
 .ruff_cache/
+.ipynb_checkpoints/
 
 # Data, checkpoints, logs and release weights never go in git.
-# (Exceptions: the hand-written SFT identity set and the trained tokenizer, both small and reviewed.)
+# Everything under data/ is ignored (downloads, token shards, SFT and eval sets, and the
+# conversations saved from the chat page in data/chats/), with two reviewed exceptions:
+# the trained tokenizer (~1 MB, deterministic, needed by every step) and the hand-written
+# identity set. Both are public once committed.
 data/*
 !data/identity.jsonl
-# The trained tokenizer is small (~0.5 MB), deterministic and needed by every later step, so it is tracked.
 !data/tokenizer/
 checkpoints/
 runs/
 release/
 *.safetensors
 *.pt
+*.pt.tmp
 *.bin
+*.parquet
+events.out.tfevents.*
+*.log
+
+# Saved chats, wherever --save-dir points (they are private conversations)
+chats/
+chat-*.jsonl
+
+# Secrets: tokens, keys, local environment
+.env
+.env.*
+*.pem
+*.key
+.netrc
+
+# Editors, OS and local tool settings
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+.claude/settings.local.json
 
 # Private project brief (kept local)
 Prompt.md

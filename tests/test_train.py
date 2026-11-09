@@ -117,6 +117,18 @@ def test_config_validation_and_overrides(setup, tmp_path):
         OptimConfig(lr=1e-4, min_lr=1e-3)
     with pytest.raises(ConfigError, match="run_name"):
         make_cfg(setup, tmp_path, run_name="a/b")
+    assert make_cfg(setup, tmp_path, cuda_memory_limit_gib=2.9).cuda_memory_limit_gib == 2.9
+    with pytest.raises(ConfigError, match="cuda_memory_limit_gib"):
+        make_cfg(setup, tmp_path, cuda_memory_limit_gib=0)
+
+
+def test_importing_aupus_enables_expandable_segments():
+    """Set before PyTorch allocates CUDA memory, so reserved memory can't balloon on Windows (§19)."""
+    import os
+
+    import aupus  # noqa: F401  (already imported; the setting happens at first import)
+
+    assert "expandable_segments:True" in os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "")
 
 
 def test_seq_len_sets_model_context(setup, tmp_path):
@@ -209,6 +221,20 @@ def test_resume_on_cuda(setup, tmp_path):
         make_cfg(setup, tmp_path, device="cuda", max_steps=3, eval_every=0), resume=True, log=quiet
     )
     assert resumed.step == 2 and resumed.train()["step"] == 3
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA GPU")
+def test_cuda_memory_limit_is_applied(setup, tmp_path):
+    cfg = make_cfg(setup, tmp_path, device="cuda", max_steps=1, eval_every=0, cuda_memory_limit_gib=1.0)
+    try:
+        lines = []
+        Trainer(cfg, log=lines.append).train()
+        assert any("GPU memory limit 1 GiB" in line for line in lines)
+        with pytest.raises(torch.OutOfMemoryError):  # 2 GiB > the 1 GiB limit: refused, not spilled
+            torch.empty(2 * 1024**3, dtype=torch.uint8, device="cuda")
+    finally:
+        torch.cuda.set_per_process_memory_fraction(1.0)
+        torch.cuda.empty_cache()
 
 
 def test_resume_after_ctrl_c_is_bit_identical(setup, tmp_path, monkeypatch):

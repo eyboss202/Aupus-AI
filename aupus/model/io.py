@@ -118,6 +118,11 @@ def load_model(
         tokenizer_path: override the tokenizer (default: the one recorded with the model).
     """
     path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"model not found: {path} (relative paths start from the current folder, {Path.cwd()}; "
+            "run the scripts from the repository folder, e.g. `python scripts/chat_web.py --model ...`)"
+        )
     loader = _load_release if path.is_dir() else _load_checkpoint
     cfg, weights, tok_path, info = loader(path, tokenizer_path)
     tokenizer = Tokenizer.load(tok_path)

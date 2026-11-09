@@ -45,7 +45,7 @@ from aupus.data.shards import file_sha256
 from aupus.model import ModelConfig
 from aupus.tokenizer import END, Tokenizer
 from aupus.tokenizer.chat import prompt_ids
-from aupus.train.config import DEVICES, PRECISIONS, OptimConfig, build_with_overrides
+from aupus.train.config import DEVICES, PRECISIONS, OptimConfig, build_with_overrides, check_memory_limit
 from aupus.train.pretrain import Trainer
 
 
@@ -89,6 +89,7 @@ class SFTConfig:
     precision: str = "auto"
     compile: bool = True
     grad_checkpointing: bool = False
+    cuda_memory_limit_gib: float | None = None
     eval_every: int = 100
     save_every: int = 200
     keep_last: int = 2
@@ -121,6 +122,7 @@ class SFTConfig:
             raise ConfigError("init_from must name the Base checkpoint to fine-tune")
         if self.patience and not self.eval_every:
             raise ConfigError("patience needs eval_every > 0 (early stopping is decided at evaluations)")
+        check_memory_limit(self.cuda_memory_limit_gib)
 
     @classmethod
     def from_yaml(cls, path: str | Path, overrides: dict[str, Any] | None = None) -> SFTConfig:

@@ -75,11 +75,14 @@ def stream(
     stop_ids: Iterable[int] = (),
     generator: torch.Generator | None = None,
     repetition_penalty: float = 1.0,
+    vocab_limit: int | None = None,
 ) -> Iterator[int]:
     """Yield generated token ids one at a time (the prompt is not repeated).
 
     Stops after ``max_new_tokens``, after yielding a token in ``stop_ids``, or
-    when the context window is full.
+    when the context window is full. ``vocab_limit`` (usually the tokenizer's
+    ``vocab_size``) keeps ids at or above it from ever being picked: a model's
+    embedding table may be bigger than its tokenizer, and those extra ids have no text.
     """
     if repetition_penalty <= 0:
         raise ValueError(f"repetition_penalty must be > 0, got {repetition_penalty}")
@@ -101,6 +104,8 @@ def stream(
         seen[idx[0]] = True
         for _ in range(min(max_new_tokens, cfg.context_length - len(prompt))):
             logits = model(idx, kv_cache=cache, start_pos=pos).logits[0, -1]
+            if vocab_limit is not None:
+                logits = logits[:vocab_limit]  # same ids, minus the ones the tokenizer doesn't have
             pos += idx.shape[1]
             if repetition_penalty != 1.0:
                 logits = apply_repetition_penalty(logits, seen.nonzero()[:, 0], repetition_penalty)

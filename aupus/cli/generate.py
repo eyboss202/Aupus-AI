@@ -67,7 +67,8 @@ def complete(loaded: LoadedModel, prompt: str, max_new_tokens: int, out: TextIO,
     window = loaded.model.cfg.context_length
     ids = [eos, *tok.encode(prompt)][-(window - 1) :]  # keep the end of an over-long prompt
     text = TextStream(tok)
-    for token in stream(loaded.model, ids, max_new_tokens, stop_ids=[eos], **sampling):  # type: ignore[arg-type]
+    tokens = stream(loaded.model, ids, max_new_tokens, stop_ids=[eos], vocab_limit=tok.vocab_size, **sampling)  # type: ignore[arg-type]
+    for token in tokens:
         out.write(text.push(token))
         out.flush()
     out.write(text.flush())

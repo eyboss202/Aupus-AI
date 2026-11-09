@@ -64,7 +64,8 @@ def respond(
     text = TextStream(tok)
     stops = [tok.special_id(END), tok.special_id(EOS)]
     try:
-        for token in stream(loaded.model, ids, reserve, stop_ids=stops, **sampling):  # type: ignore[arg-type]
+        tokens = stream(loaded.model, ids, reserve, stop_ids=stops, vocab_limit=tok.vocab_size, **sampling)  # type: ignore[arg-type]
+        for token in tokens:
             out.write(text.push(token))
             out.flush()
     except KeyboardInterrupt:

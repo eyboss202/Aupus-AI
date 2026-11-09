@@ -68,6 +68,11 @@ def test_export_refuses_to_overwrite(tiny_run, tmp_path):
         export_release(tiny_run.checkpoint, tmp_path / "other", dtype="int8")
 
 
+def test_missing_model_path_gives_a_clear_error(tmp_path):
+    with pytest.raises(FileNotFoundError, match="model not found.*repository folder"):
+        load_model(tmp_path / "release" / "nope")
+
+
 def test_load_checks_the_tokenizer(tiny_run):
     other = ROOT / "data" / "tokenizer" / "aupus-bpe-32k.json"
     with pytest.raises(ValueError, match="SHA-256"):
@@ -120,6 +125,20 @@ def test_strong_penalty_stops_greedy_repetition():
     assert len(set(penalised)) == len(penalised) and not set(penalised) & {1, 2, 3}
     with pytest.raises(ValueError, match="repetition_penalty"):
         generate(model, [1], 3, repetition_penalty=0)
+
+
+def test_vocab_limit_never_samples_ids_the_tokenizer_lacks(tiny_run):
+    """The test model's embedding (363 ids) is bigger than its tokenizer: those ids have no text."""
+    loaded = load_model(tiny_run.checkpoint)
+    tok = loaded.tokenizer
+    assert loaded.model.cfg.vocab_size > tok.vocab_size
+    g = torch.Generator().manual_seed(0)
+    free = generate(loaded.model, [1, 2], 60, temperature=50.0, generator=g)
+    assert max(free) >= tok.vocab_size  # without the limit, a near-uniform sample hits them
+    g = torch.Generator().manual_seed(0)
+    limited = generate(loaded.model, [1, 2], 60, temperature=50.0, generator=g, vocab_limit=tok.vocab_size)
+    assert max(limited) < tok.vocab_size
+    tok.decode(limited)  # decodable, which is what crashed the chat before
 
 
 # ---------------------------------------------------------------- generate

@@ -39,6 +39,9 @@ dev = ["pytest>=8.0", "ruff>=0.5"]
 [tool.setuptools.packages.find]
 include = ["aupus*"]
 
+[tool.setuptools.package-data]
+"aupus.cli" = ["*.html", "*.svg", "fonts/*.woff2", "fonts/*.txt"]  # browser chat page, logo, fonts + OFL licenses
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"

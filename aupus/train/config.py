@@ -67,6 +67,10 @@ class TrainConfig:
             fp32 everywhere else; fp16 must be asked for explicitly (docs/PLAN.md decision 13).
         compile: use ``torch.compile`` when this machine supports it (falls back to eager otherwise).
         grad_checkpointing: recompute activations in backward to save memory.
+        cuda_memory_limit_gib: the most GPU memory this run may reserve (``None`` = no
+            limit). Past it PyTorch frees its cache, then fails with a clear out-of-memory
+            error. Without a limit, Windows silently moves the excess into system RAM and
+            training gets several times slower (docs/PLAN.md §18–§19).
         eval_every / eval_batches: validation loss every N steps on the first
             ``eval_batches`` micro-batches of the val split (the same tokens every time).
         save_every / keep_last: checkpoint every N steps, keep the newest ``keep_last``
@@ -91,6 +95,7 @@ class TrainConfig:
     precision: str = "auto"
     compile: bool = True
     grad_checkpointing: bool = False
+    cuda_memory_limit_gib: float | None = None
     eval_every: int = 250
     eval_batches: int = 20
     save_every: int = 500
@@ -114,6 +119,7 @@ class TrainConfig:
                 raise ConfigError(f"{name} must be >= 0, got {getattr(self, name)}")
         if self.seq_len is not None and self.seq_len <= 0:
             raise ConfigError(f"seq_len must be positive, got {self.seq_len}")
+        check_memory_limit(self.cuda_memory_limit_gib)
         if not self.run_name or Path(self.run_name).name != self.run_name:
             raise ConfigError(f"run_name must be a plain directory name, got {self.run_name!r}")
 
@@ -138,6 +144,11 @@ class TrainConfig:
         if self.seq_len is None:
             raise ValueError("seq_len is not resolved yet")
         return self.micro_batch * self.grad_accum * self.seq_len
+
+
+def check_memory_limit(limit: float | None) -> None:
+    if limit is not None and limit <= 0:
+        raise ConfigError(f"cuda_memory_limit_gib must be positive, got {limit}")
 
 
 def build_with_overrides(

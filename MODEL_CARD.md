@@ -11,8 +11,8 @@
 | What it does | Continues English text | Answers in a chat (one assistant turn at a time) |
 | Made by | Pretraining from random weights | Supervised fine-tuning of Base |
 | Architecture | Llama-style decoder: RMSNorm, RoPE, grouped-query attention, SwiGLU, tied embeddings, no biases | same weights, same shape |
-| Size | *pending* (the `small` preset is 125.3M parameters; the final size is decided before M8) | same |
-| Context window | 1,024 tokens (*pending* if the size changes) | same |
+| Size | 125.3M parameters (`small` preset: 16 layers × 768, 100.7M non-embedding) | same |
+| Context window | 1,024 tokens | same |
 | Tokenizer | 32,000-id byte-level BPE, trained from scratch on FineWeb-Edu (`data/tokenizer/aupus-bpe-32k.json`) | same |
 | License | Apache-2.0 (weights and code) | Apache-2.0 |
 
@@ -49,8 +49,9 @@ never for training.
 
 - **Base:** next-token prediction on packed 1,024-token windows, AdamW
   (β = 0.9/0.95, weight decay 0.1 on matmul weights only), linear warmup then
-  cosine decay, gradient clipping at 1.0, fp32 on a GTX 1650 Super. Token budget
-  and time: *pending*.
+  cosine decay, gradient clipping at 1.0, fp32 on a GTX 1650 Super (4 GB). Planned: 2.5B
+  tokens (20 per parameter), 9,537 steps of 262,144 tokens, ~16–17 days of GPU time
+  (`configs/train/small.yaml`). Actual time and final losses: *pending*.
 - **Instruct:** the same loop on conversations in the Aupus chat template
   (`<|user|> … <|end|><|assistant|> … <|end|>`), loss only on the assistant's
   replies, learning rate 3e-5, up to 3 epochs with early stopping on
@@ -94,7 +95,8 @@ Expected range for a model of this size and budget (docs/PLAN.md §8): HellaSwag
 ## How to use
 
 ```bash
-python scripts/chat.py --model release/aupus-0.1-instruct          # chat
+python scripts/chat_web.py --model release/aupus-0.1-instruct      # chat in the browser (http://127.0.0.1:8000)
+python scripts/chat.py --model release/aupus-0.1-instruct          # chat in the terminal
 python scripts/generate.py --model release/aupus-0.1-base --prompt "The water cycle is"
 python scripts/evaluate.py --model release/aupus-0.1-instruct       # reproduce the table
 ```

@@ -148,6 +148,11 @@ class Trainer:
         if self.device.type == "cuda":
             torch.backends.cuda.matmul.allow_tf32 = True  # TF32 matmuls on Ampere+; no effect on older GPUs
             torch.backends.cudnn.allow_tf32 = True
+            if cfg.cuda_memory_limit_gib is not None:
+                index = self.device.index if self.device.index is not None else torch.cuda.current_device()
+                total = torch.cuda.get_device_properties(index).total_memory
+                fraction = min(1.0, cfg.cuda_memory_limit_gib * 1024**3 / total)
+                torch.cuda.set_per_process_memory_fraction(fraction, index)
 
         self._setup_data()
         if self.tokenizer.vocab_size > self.model_cfg.vocab_size:
@@ -346,6 +351,7 @@ class Trainer:
                     top_k=50,
                     stop_ids=stop_ids,
                     generator=gen,
+                    vocab_limit=self.tokenizer.vocab_size,
                 )
             )
             out.append(self._format_sample(prompt, self.tokenizer.decode(new, skip_special=True)))
@@ -419,9 +425,13 @@ class Trainer:
             f"run {cfg.run_name} | model {cfg.model}: {counts['total'] / 1e6:.1f}M params "
             f"({counts['non_embedding'] / 1e6:.1f}M non-embedding), context {mc.context_length}"
         )
+        limit = cfg.cuda_memory_limit_gib
+        memory = ""
+        if limit is not None and self.device.type == "cuda":
+            memory = f" | GPU memory limit {limit:g} GiB"
         self.log(
             f"device {device} | precision {self.precision} | compiled {self.compiled} | "
-            f"grad checkpointing {cfg.grad_checkpointing}"
+            f"grad checkpointing {cfg.grad_checkpointing}{memory}"
         )
         self.log(self._describe_data())
 

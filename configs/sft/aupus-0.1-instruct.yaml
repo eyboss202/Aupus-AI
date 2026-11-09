@@ -1,12 +1,16 @@
 # Milestone 10: Aupus 0.1 Instruct = Aupus 0.1 Base fine-tuned on ~20K human-written conversations
 # (oasst2 English top-1 branches + Dolly 15k + data/identity.jsonl), loss on replies only (docs/PLAN.md §4).
-# DRAFT until the M8 model size is decided: micro_batch must fit the GPU. 4 x 1024 tokens with
-# gradient checkpointing should fit `small` on the 4 GiB GTX 1650 Super; check peak_mem_gib in the log.
+# Sized on the GTX 1650 Super (4 GiB) with the dry run on the pilot checkpoint (docs/PLAN.md §19):
+# `small` needs ~2 GiB for weights + gradients + AdamW alone, and the 32k-token output layer costs
+# ~0.5 GiB per copy for 4 x 1,024 positions, so micro-batch 4 peaks at ~3.6 GiB and doesn't fit.
+# Micro-batch 1 peaks at 2.3 GiB, needs no padding and ran at ~1,190 tok/s in the dry run: ~6.4 s
+# per step (7,600 tokens), ~70 min per epoch with evaluations (~1 min each), ~3.5 h for 3 epochs
+# (less with early stopping).
 run_name: aupus-0.1-instruct
 init_from: runs/aupus-0.1-base/best.pt
 data_dir: data/sft
-micro_batch: 4
-grad_accum: 8          # 32 conversations per optimizer step, ~630 steps per epoch
+micro_batch: 1
+grad_accum: 32         # 32 conversations per optimizer step, ~600 steps per epoch
 epochs: 3              # an upper bound: early stopping usually ends the run sooner
 patience: 3            # stop after 3 evaluations (300 steps) without a better val loss
 optim:
@@ -17,6 +21,7 @@ optim:
 precision: auto        # fp32 on the GTX 1650 Super (docs/PLAN.md decision 13)
 compile: true
 grad_checkpointing: true
+cuda_memory_limit_gib: 2.9  # a clear error instead of a silent spill into system RAM (§19)
 eval_every: 100
 save_every: 200
 keep_last: 2

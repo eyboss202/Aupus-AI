@@ -98,6 +98,19 @@ overwritten by accident.
 
 ### Watching it
 
+In a **second** terminal (activate the environment there too), this shows how far the run
+is (% done, time left), the losses, the last checkpoint and what the GPU is doing. It only
+reads files, so it never disturbs training:
+
+```powershell
+python scripts/train_status.py              # once
+python scripts/train_status.py --watch 30   # refresh every 30 s; Ctrl-C here only quits the status
+```
+
+For CPU, RAM and disk use, Windows' Task Manager (Ctrl+Shift+Esc) → Performance shows all of
+it, including "GPU 0" with its temperature. Training keeps the GPU at ~100% but needs little
+else: measured on the reference PC, about a quarter of one CPU core and ~1.4 GB of RAM.
+
 Each log line looks like this:
 
 ```

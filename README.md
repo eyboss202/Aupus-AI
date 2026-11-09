@@ -180,12 +180,36 @@ python scripts/prepare_data.py --source parquet --input data/raw/fineweb_edu --o
 ### Training
 
 **To train Aupus 0.1 yourself, follow [`docs/TRAINING.md`](docs/TRAINING.md)**: a step-by-step
-guide from a fresh clone to a chat model, including how to stop and resume a multi-day run,
-what the log means and what to do when something goes wrong.
+guide from a fresh clone to a chat model, including what the log means and what to do when
+something goes wrong. The essentials, run from the repository folder with the virtual
+environment active (Windows: `.venv\Scripts\activate`; Linux/macOS: `source .venv/bin/activate`):
 
-```bash
-python scripts/train.py --config configs/train/small.yaml       # Aupus 0.1 Base: 125M params, 2.5B tokens
-python scripts/train.py --resume runs/aupus-0.1-base            # after every Ctrl-C, crash or reboot
+| What | Command |
+|---|---|
+| **Start** (the first time only) | `python scripts/train.py --config configs/train/small.yaml` |
+| **Stop safely** | Press **Ctrl-C once** in the training window and wait for the `saved ...` line (up to ~3 min: it finishes the current step first) |
+| **Resume** (after every stop, crash or reboot) | `python scripts/train.py --resume runs/aupus-0.1-base` |
+| **Progress and GPU use** (in a second terminal) | `python scripts/train_status.py --watch 30` |
+| **Graphs** (in a second terminal) | `tensorboard --logdir runs`, then open http://localhost:6006 |
+
+The run is `small` (125M parameters) for 2.5B tokens: ~16–17 days of training on a 4 GB GTX
+1650 Super, with as many stops as you like. Resuming continues bit for bit where it stopped;
+a crash or power cut loses at most the ~25 minutes since the last automatic checkpoint. Never
+start the same run with `--config` again (it refuses rather than overwrite it), and stop
+training before gaming: a game and training on the same 4 GB card slow each other ~4×.
+
+`train_status.py` only reads the run's files, so it never disturbs training. It shows:
+
+```
+Aupus training: runs/aupus-0.1-base
+  progress    step 1 / 9,537  (0.0%)  [..............................]
+  tokens      0.3M / 2.50B
+  speed       1,833 tok/s, ~143 s per step
+  time left   ~15 d 18 h of training (stops not counted)
+  train loss  10.518
+  val loss    best 10.521 at step 0 (started at 10.52)
+  checkpoint  none yet (the first one is written at step 10)
+  GPU now     71 °C · 91 W · 100% busy · 3.2 / 4.0 GB memory
 ```
 
 One YAML file per run in `configs/train/` (strict: a typo in a key is an error). Any key can

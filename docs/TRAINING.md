@@ -99,7 +99,8 @@ overwritten by accident.
 ### Moving a run to another machine
 
 A run can start on one machine and finish on another, for example a rented GPU first and
-this PC afterwards. Copy the whole run folder (`runs/aupus-0.1-base/`, at least the newest
+this PC afterwards ([`docs/RUNPOD.md`](RUNPOD.md) does the rented part, and
+`scripts/runpod/sync.py` keeps the run's newest checkpoint on this PC while it trains). Copy the whole run folder (`runs/aupus-0.1-base/`, at least the newest
 `step_NNNNNN.pt`, `config.yaml` and `model.yaml`), make sure the new machine has the same
 `data/pretrain/fineweb_edu/` (copied, or rebuilt with step 1: the result is identical),
 and resume there.
@@ -114,6 +115,9 @@ continues on the GTX 1650 Super with:
 ```powershell
 python scripts/train.py --resume runs/aupus-0.1-base micro_batch=1 grad_accum=256 eval_batches=800 grad_checkpointing=true cuda_memory_limit_gib=2.9 save_every=10 eval_every=40 sample_every=200 log_every=1
 ```
+
+`scripts/train.py --stop-after HOURS` stops a session cleanly (finish the step, save) after that
+many hours, which is how a rented GPU stays inside its budget. It isn't saved in the run.
 
 Training refuses a resume that would change the sequences per step or the validation set,
 and says which value to pass. The new values are saved in the run's `config.yaml`, so later
@@ -200,7 +204,8 @@ of training time (not counting stops). `configs/train/small.yaml` trains the `sm
 (125M parameters) for 2.5B tokens: 9,537 steps of ~150 s, so **~16–17 days of GPU time**,
 3–4 weeks in practice with stops. The `eta` in the log is the remaining training time.
 Smaller budgets finish sooner but give a weaker model (`max_steps=...` when starting);
-the reasoning is in docs/PLAN.md.
+the reasoning is in docs/PLAN.md. A rented RTX 4090 trains the same run in ~13–17 h for
+~5–6 USD: [`docs/RUNPOD.md`](RUNPOD.md).
 
 ## 3. Evaluate the Base model
 

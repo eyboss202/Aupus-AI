@@ -2,3 +2,5 @@
 # checked whenever they are loaded. Git's CRLF conversion on Windows (core.autocrlf=true) would
 # change the bytes and so the hash, making shards and checkpoints unusable across machines.
 data/tokenizer/** text eol=lf
+# Shell scripts run on Linux pods (scripts/runpod/): a CRLF checkout would break them ("$'\r': command not found").
+*.sh text eol=lf

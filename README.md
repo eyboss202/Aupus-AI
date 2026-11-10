@@ -20,6 +20,7 @@
 
 <p align="center">
   <a href="docs/TRAINING.md">Train it yourself</a> ·
+  <a href="docs/RUNPOD.md">Train on RunPod</a> ·
   <a href="MODEL_CARD.md">Model card</a> ·
   <a href="docs/DATA.md">Data</a> ·
   <a href="docs/IDENTITY.md">Identity guide</a> ·
@@ -108,7 +109,7 @@ The full plan, hardware analysis and measured throughput are in
 | 5 | Data pipeline on a small sample | ✅ done |
 | 6 | Pretraining loop + end-to-end `tiny` run | ✅ done |
 | 7 | Full data preparation | ✅ done: 2.94B training tokens |
-| 8 | Aupus 0.1 Base pretraining | ⏳ configured (`small`, 2.5B tokens, ~16–17 days on a GTX 1650 Super) and tested with a 1-hour pilot; not started yet |
+| 8 | Aupus 0.1 Base pretraining | ⏳ configured (`small`, 2.5B tokens) and tested with a 1-hour pilot; planned on a rented RTX 4090 (~13–17 h, [`docs/RUNPOD.md`](docs/RUNPOD.md)), or ~16–17 days on a GTX 1650 Super; not started yet |
 | 9 | Evaluation harness + results | 🚧 harness done and tested on the GPU (~14 min per full run); results need the trained model |
 | 10 | Supervised fine-tuning → Aupus 0.1 Instruct | 🚧 code and data done, dry-run on the GPU (~3.5 h); run needs Base (and `data/identity.jsonl`) |
 | 11 | `generate` / `chat` CLI, browser chat, release export | ✅ done |
@@ -191,6 +192,7 @@ environment active (Windows: `.venv\Scripts\activate`; Linux/macOS: `source .ven
 | **Resume** (after every stop, crash or reboot) | `python scripts/train.py --resume runs/aupus-0.1-base` |
 | **Progress and GPU use** (in a second terminal) | `python scripts/train_status.py --watch 30` |
 | **Graphs** (in a second terminal) | `tensorboard --logdir runs`, then open http://localhost:6006 |
+| **On a rented GPU instead** | [`docs/RUNPOD.md`](docs/RUNPOD.md): the same run on an RTX 4090 in ~13–17 h for ~5–6 USD, set up, trained, copied to the PC and stopped by `scripts/runpod/` |
 
 The run is `small` (125M parameters) for 2.5B tokens: ~16–17 days of training on a 4 GB GTX
 1650 Super, with as many stops as you like. Resuming continues bit for bit where it stopped;
@@ -305,11 +307,11 @@ aupus/          the Python package
   cli/          generate / chat in the terminal, chat in the browser (web.py + chat_web.html)
 configs/model/  model presets: debug (~6.5M), tiny (~34M), small (~125M), base (~348M)
 configs/data/   data-pipeline settings (filters, dedup, split, shard size)
-configs/train/  pretraining-run configs: tiny (M6 check), small (Aupus 0.1 Base, M8)
+configs/train/  pretraining-run configs: tiny (M6 check), small (Aupus 0.1 Base, M8), small-runpod (the same run on a 24 GB GPU)
 configs/sft/    fine-tuning configs: aupus-0.1-instruct (M10)
-scripts/        entry points
+scripts/        entry points; scripts/runpod/ trains on a rented RunPod GPU (docs/RUNPOD.md)
 tests/          pytest suite (runs on CPU in CI)
-docs/           TRAINING.md (how to train it yourself), IDENTITY.md (writing the identity set), PLAN.md, DATA.md
+docs/           TRAINING.md (how to train it yourself), RUNPOD.md (on a rented GPU), IDENTITY.md (writing the identity set), PLAN.md, DATA.md
   assets/       the owl logo (logo.svg; logo-small.svg for small sizes), the wordmark and screenshots
 MODEL_CARD.md   what the models are, how they were made, limitations
 CONTRIBUTING.md setup, checks and the project's rules

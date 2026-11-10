@@ -6,7 +6,8 @@ Milestone 7 done on the desktop (2026-11-09): 2.94B train + 14.6M val tokens (§
 (`small`, 2.5B tokens, decision 39) after a 1-hour pilot (§18), not started yet: the user starts it.
 Milestones 9–12: code, tests and docs done (§17), and dry-run on the GPU from the pilot checkpoint, with the
 browser chat added (§19); their real runs need the trained Base model.
-Development moved to a new machine on 2026-11-06 (§12).
+Development moved to a new machine on 2026-11-06 (§12). Since 2026-11-10 M8 is planned on a rented
+RunPod RTX 4090 (decisions 47–49, docs/RUNPOD.md).
 Date: 2026-11-04
 
 ## 1. Detected hardware (from `scripts/check_env.py`)
@@ -197,7 +198,7 @@ These are ballpark figures based on published results for similarly sized models
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | Where to train Base (M7–M10) | **On the user's own desktop (GTX 1650 Super), no rented GPU** (2026-11-08). `small` was measured at ~2 weeks there (§13), so model size and token budget are revisited before M8 |
+| 1 | Where to train Base (M7–M10) | ~~On the user's own desktop (GTX 1650 Super), no rented GPU~~ (2026-11-08). **Changed 2026-11-10: M8 pretraining on a rented RTX 4090 on RunPod, 10 USD budget** (decision 47); evaluation and SFT stay on the desktop, which can also finish the run if the budget runs out |
 | 2 | YAML parser | **`pyyaml` allowed** (the one dependency added beyond the spec's list). Our loader adds YAML 1.2 float parsing so `lr: 3e-4` is a float, not a string |
 | 3 | `uv` | Pending. Until then a plain `python -m venv .venv` + `pip install -e ".[dev]"` is used; `pyproject.toml` is uv-compatible, so switching later only adds a `uv.lock` |
 | 4 | Wikipedia slice | **No.** FineWeb-Edu only for 0.1 (simplest licensing) |
@@ -243,6 +244,9 @@ These are ballpark figures based on published results for similarly sized models
 | 44 | CUDA allocator on Windows | **`expandable_segments:True` by default**, set in `aupus/__init__.py` before PyTorch allocates (an explicit `PYTORCH_CUDA_ALLOC_CONF` wins). Found in the SFT dry run (§19): with varying batch shapes the caching allocator reserved 10.75 GB for 0.98 GB of tensors, and Windows quietly put the excess in system RAM |
 | 45 | GPU memory limit per run | New `cuda_memory_limit_gib` in `TrainConfig`/`SFTConfig` (`torch.cuda.set_per_process_memory_fraction`), **2.9 in the M8 and M10 configs**: over the limit a run fails with a clear out-of-memory error (and resumes after a fix) instead of silently running 4× slower for days. SFT micro-batch 4 → 1 (× 32 accumulation) because 4 needs ~3.6 GB |
 | 46 | Visual identity | **The user's own owl, in Aupus blue** (2026-11-09; it replaced two rounds of owls drawn here, judged too detailed and too artificial). Their PNG (blue line art on white) is vectorised into `docs/assets/logo.svg` (transparent, one colour, sharp at any size) plus `logo-small.svg`, the same drawing with thicker strokes for 16–32 px (tab icon, header, replies). Blue `#002B83` on light backgrounds, `#8EAAF5` on dark ones; the chat page uses it as its one accent (owl, Send, focus, suggestions). `wordmark-light.svg`/`wordmark-dark.svg`: the owl + "aupus" in Newsreader as outlines, picked by GitHub's theme through `<picture>`. Typefaces (SIL OFL 1.1, bundled in `aupus/cli/fonts/`): Newsreader for the name and headings, Instrument Sans for the interface and for what Aupus writes (the user wants replies in the normal interface font). Quiet, typographic layout; no mascot animation |
+| 47 | M8 on RunPod | **One RTX 4090 (24 GB), Community Cloud, On-Demand, ~0.34 USD/h, 10 USD prepaid** (the user's choice, 2026-11-10). `configs/train/small-runpod.yaml` is the same run as `small.yaml` (a test compares them) at 16 × 16 sequences, bf16, compiled, no checkpointing, saving and evaluating every 100 steps (~10 min). Estimated ~13–17 h and ~5–6 USD in total; `scripts/runpod/setup.sh` measures the real speed before the run starts. A run started there finishes on the desktop with the micro-batch change of 759c91d |
+| 48 | Data for the pod | **Built on the pod** (8.6 GB download in the datacenter, then `prepare_data.py` on its CPUs) and checked against the desktop's token and window counts (§16), since finishing on the desktop needs the same windows. A mismatch stops `setup.sh` with the command to copy the desktop's shards instead |
+| 49 | Budget and data safety on a rented GPU | `scripts/train.py --stop-after HOURS` (a timer calling `Trainer.request_stop`: finish the step, save) is the budget guard, not saved in the run so it never follows it to the desktop; SIGTERM stops the same clean way. `scripts/runpod/train.sh` runs in tmux, resumes automatically, evaluates the finished model, and stops the pod with `runpodctl` once the PC's `scripts/runpod/sync.py` has copied the run and checked it with SHA-256 (or after 2 h). `sync.py` keeps the newest checkpoint on the PC every 30 min, so a lost pod costs at most that |
 
 ## 11. Milestone 3 results: tokenizer
 

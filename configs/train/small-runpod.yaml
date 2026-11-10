@@ -1,0 +1,39 @@
+# Milestone 8 on a rented 24 GB GPU (RunPod RTX 4090; docs/RUNPOD.md). The SAME run as small.yaml:
+# same run_name, model, data, order (seed), 262,144 tokens per step, 9,537 steps and learning-rate
+# curve (tests/test_train.py checks this). Only the memory settings and the save/eval/log
+# frequencies differ, because a 4090 step takes ~6 s instead of ~150 s. Started here, the run can
+# be finished on the GTX 1650 Super with `micro_batch=1 grad_accum=256 eval_batches=800 ...`
+# (docs/TRAINING.md, "Moving a run to another machine").
+# Run it with `bash scripts/runpod/train.sh`, which adds the budget stop and the pod's auto-stop.
+run_name: aupus-0.1-base
+model: small
+data_dir: data/pretrain/fineweb_edu
+seq_len: 1024
+micro_batch: 16        # 16 sequences per pass fill the GPU; ~16 GiB peak (measured by scripts/runpod/setup.sh)
+grad_accum: 16         # 16 x 16 x 1024 = 262,144 tokens per step, exactly as in small.yaml (1 x 256)
+max_steps: 9537        # 2.50B tokens (20 tokens/param), 0.85 epochs of the M7 data
+optim:
+  lr: 6.0e-4
+  min_lr: 6.0e-5
+  warmup_steps: 190    # 2%
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1.0e-8
+  grad_clip: 1.0
+precision: auto        # bf16 on the 4090 (compute capability 8.9)
+compile: true          # works on Linux (Triton), unlike on Windows
+grad_checkpointing: false  # 24 GB is plenty; checkpointing would only cost ~25% speed
+cuda_memory_limit_gib: null  # the 2.9 GiB cap was for Windows' silent spill into system RAM
+eval_every: 100        # ~10 min
+eval_batches: 50       # 50 x 16 = 800 val sequences (819K tokens), the same every time
+save_every: 100        # ~10 min: the most a crash or a lost pod costs
+keep_last: 2           # 1.5 GB each; with best.pt ~4.5 GB on the pod's disk
+log_every: 5           # one line every ~30 s
+sample_every: 500      # ~50 min
+sample_tokens: 80
+sample_prompts:
+  - "The water cycle is"
+  - "In 1492, Christopher Columbus"
+  - "The most important thing to remember when learning to read is"
+  - "A prime number is"

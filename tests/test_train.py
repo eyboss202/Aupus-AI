@@ -368,3 +368,66 @@ def test_train_script_runs_and_resumes(setup, tmp_path, monkeypatch, capsys):
     script.main()
     out = capsys.readouterr().out
     assert "resumed from" in out and '"step": 3' in out
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="SIGTERM can't be caught on Windows")
+def test_sigterm_stops_cleanly_like_ctrl_c(setup, tmp_path, monkeypatch):
+    # `kill <pid>` (or a process manager) mid-step: finish the step, save, return; never abort.
+    import os
+    import signal
+
+    before = signal.getsignal(signal.SIGTERM)
+    trainer = Trainer(make_cfg(setup, tmp_path, save_every=0), log=quiet)
+    real_lr_at = pretrain.lr_at
+
+    def lr_at_with_sigterm(step, cfg, max_steps):
+        if step == 1:
+            os.kill(os.getpid(), signal.SIGTERM)
+            os.kill(os.getpid(), signal.SIGTERM)  # a second one is not an abort (unlike Ctrl-C)
+        return real_lr_at(step, cfg, max_steps)
+
+    monkeypatch.setattr(pretrain, "lr_at", lr_at_with_sigterm)
+    summary = trainer.train()
+    assert not summary["finished"] and summary["step"] == 2
+    assert ckpt.latest_checkpoint(trainer.run_dir).name == "step_000002.pt"
+    assert signal.getsignal(signal.SIGTERM) is before  # the old handler is back after train()
+
+
+def test_request_stop_from_another_thread(setup, tmp_path, monkeypatch):
+    # What `scripts/train.py --stop-after` does with a timer thread.
+    import threading
+
+    trainer = Trainer(make_cfg(setup, tmp_path, save_every=0), log=quiet)
+    real_lr_at = pretrain.lr_at
+
+    def lr_at_with_timer(step, cfg, max_steps):
+        if step == 3:
+            t = threading.Thread(target=trainer.request_stop, args=("budget",))
+            t.start()
+            t.join()
+        return real_lr_at(step, cfg, max_steps)
+
+    monkeypatch.setattr(pretrain, "lr_at", lr_at_with_timer)
+    summary = trainer.train()
+    assert not summary["finished"] and summary["step"] == 4
+    assert (trainer.run_dir / "step_000004.pt").exists()
+
+
+def test_train_script_stop_after(setup, tmp_path, monkeypatch, capsys):
+    spec = importlib.util.spec_from_file_location("train_script", ROOT / "scripts" / "train.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    from aupus.config import save_config
+
+    cfg_path = tmp_path / "run.yaml"
+    save_config(make_cfg(setup, tmp_path, max_steps=50, eval_every=0, save_every=0), cfg_path)
+    # 1e-9 h: the timer fires at once, so the run stops (and saves) after its first step.
+    monkeypatch.setattr(sys, "argv", ["train.py", "--config", str(cfg_path), "--stop-after", "1e-9"])
+    with pytest.raises(SystemExit) as stopped:
+        script.main()
+    assert stopped.value.code == 130
+    out = capsys.readouterr().out
+    assert "--stop-after 1e-09 h reached" in out and "--resume" in out
+    assert len(ckpt.list_checkpoints(tmp_path / "run")) == 1
+    saved = yaml.safe_load((tmp_path / "run" / "config.yaml").read_text())
+    assert "stop_after" not in saved  # a session setting: it never follows the run to another machine

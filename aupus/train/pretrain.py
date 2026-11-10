@@ -25,7 +25,9 @@ Around that the trainer:
   * saves a full checkpoint every ``save_every`` steps and at the end, keeps
     the newest ``keep_last`` plus ``best.pt``;
   * on Ctrl-C, finishes the current step, saves, and exits cleanly (a second
-    Ctrl-C aborts immediately). ``scripts/train.py --resume`` continues the run.
+    Ctrl-C aborts immediately). SIGTERM (``kill <pid>``) and ``request_stop``
+    (``scripts/train.py --stop-after``) stop the same clean way.
+    ``scripts/train.py --resume`` continues the run.
 """
 
 from __future__ import annotations
@@ -131,6 +133,7 @@ class Trainer:
         cfg = self.cfg
         self.run_dir = cfg.run_dir
         self._stop_requested = False
+        self._interrupts = 0  # Ctrl-C presses this session: the second one aborts
         self._halt_reason: str | None = None  # set to stop training early (SFT early stopping)
 
         existing = checkpoint.latest_checkpoint(self.run_dir)
@@ -442,23 +445,35 @@ class Trainer:
 
     # ------------------------------------------------------------ main loop
 
+    def request_stop(self, reason: str) -> None:
+        """Finish the current step, save a checkpoint and return from ``train()`` (safe from any thread)."""
+        if not self._stop_requested:
+            self._stop_requested = True
+            self._print(f"\n{reason}: stopping after this step and saving a checkpoint")
+
     def _on_sigint(self, signum: int, frame: Any) -> None:
-        if self._stop_requested:
+        self._interrupts += 1
+        if self._interrupts > 1:
             raise KeyboardInterrupt
-        self._stop_requested = True
-        self._print("\nCtrl-C: stopping after this step and saving a checkpoint (Ctrl-C again to abort)")
+        self.request_stop("Ctrl-C (press it again to abort without saving)")
+
+    def _on_sigterm(self, signum: int, frame: Any) -> None:
+        # `kill <pid>`, or a process manager shutting down. Never escalates to an abort.
+        self.request_stop("SIGTERM")
 
     def train(self) -> dict[str, Any]:
-        """Run until ``max_steps`` (or Ctrl-C). Returns a summary of the run."""
-        old_handler = None
+        """Run until ``max_steps`` (or Ctrl-C / SIGTERM / ``request_stop``). Returns a summary of the run."""
+        old_handlers: dict[int, Any] = {}
+        self._interrupts = 0
         if threading.current_thread() is threading.main_thread():
-            old_handler = signal.signal(signal.SIGINT, self._on_sigint)
+            old_handlers[signal.SIGINT] = signal.signal(signal.SIGINT, self._on_sigint)
+            old_handlers[signal.SIGTERM] = signal.signal(signal.SIGTERM, self._on_sigterm)
         self._open_tensorboard()
         try:
             return self._train_loop()
         finally:
-            if old_handler is not None:
-                signal.signal(signal.SIGINT, old_handler)
+            for signum, handler in old_handlers.items():
+                signal.signal(signum, handler)
             if self._tb is not None:
                 self._tb.close()
                 self._tb = None

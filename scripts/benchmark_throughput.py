@@ -19,6 +19,13 @@ Precision (``--dtype``):
 Usage:
     python scripts/benchmark_throughput.py --presets tiny small --micro-batch 1
     python scripts/benchmark_throughput.py --device cuda --presets small --micro-batch 2 --grad-checkpointing
+    # on a rented GPU: how long and how much would 2.5B tokens take at 0.34 USD/h?
+    python scripts/benchmark_throughput.py --presets small --micro-batch 16 --dtype bf16 --compile \
+        --plan-tokens 2.5e9 --usd-per-hour 0.34
+
+The plan is an estimate within a few %: a real run also evaluates and saves (a bit slower),
+and the benchmark runs the optimizer after every micro-batch, which a real run with
+gradient accumulation doesn't (a bit faster).
 """
 
 from __future__ import annotations
@@ -157,6 +164,15 @@ def bench(
     return result
 
 
+def plan(tokens_per_sec: float, tokens: float, usd_per_hour: float | None) -> dict:
+    """Hours (and cost) of training ``tokens`` tokens at the measured speed."""
+    hours = tokens / tokens_per_sec / 3600
+    out = {"plan_tokens": tokens, "plan_hours": round(hours, 2)}
+    if usd_per_hour is not None:
+        out["plan_usd"] = round(hours * usd_per_hour, 2)
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--presets", nargs="+", default=PRESETS, choices=PRESETS)
@@ -169,6 +185,8 @@ def main() -> None:
     ap.add_argument("--compile", action="store_true", help="wrap the model in torch.compile")
     ap.add_argument("--grad-checkpointing", action="store_true", help="recompute activations in backward")
     ap.add_argument("--threads", type=int, default=None, help="torch CPU threads (default: torch's choice)")
+    ap.add_argument("--plan-tokens", type=float, help="also report the hours a run of this many tokens takes")
+    ap.add_argument("--usd-per-hour", type=float, help="with --plan-tokens: what those hours cost")
     args = ap.parse_args()
     if args.threads:
         torch.set_num_threads(args.threads)
@@ -193,6 +211,8 @@ def main() -> None:
         except torch.cuda.OutOfMemoryError:
             r = {"preset": name, "micro_batch": args.micro_batch, "error": "out of memory"}
             torch.cuda.empty_cache()
+        if args.plan_tokens and "tokens_per_sec" in r:
+            r.update(plan(r["tokens_per_sec"], args.plan_tokens, args.usd_per_hour))
         print(json.dumps(r), flush=True)
 
 

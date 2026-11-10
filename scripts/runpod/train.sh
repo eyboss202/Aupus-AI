@@ -75,6 +75,14 @@ else
     start=(--config "$CONFIG")
 fi
 export PYTHONUNBUFFERED=1
+# One thread per CPU the pod may use, not per CPU of the host (see setup.sh).
+if [ -z "${OMP_NUM_THREADS:-}" ]; then
+    OMP_NUM_THREADS=$(nproc)
+    if read -r quota period </sys/fs/cgroup/cpu.max 2>/dev/null && [ "$quota" != max ]; then
+        OMP_NUM_THREADS=$(((quota + period - 1) / period))
+    fi
+    export OMP_NUM_THREADS
+fi
 
 echo "=== training: python scripts/train.py ${start[*]} --stop-after $MAX_HOURS $* ($(date -u '+%F %T') UTC)" | tee -a "$OUT"
 # tee -i: Ctrl-C must reach only the trainer (which finishes the step and saves), not the pipe.

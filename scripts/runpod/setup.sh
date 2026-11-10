@@ -50,9 +50,15 @@ pod_cpus() {
     echo "$n"
 }
 
+# PyTorch and NumPy start one thread per CPU they *see*: on a pod that is the whole host (e.g. 128),
+# while the container may use ~14. That many threads thrash, and CPU work (tests, the tiny models
+# in them) runs ~100x slower. Limit them to the pod's real share.
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$(pod_cpus)}"
+
 step "1/5 tmux and the GPU"
 ensure_tmux
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+echo "CPUs for this pod: $(pod_cpus) of $(nproc) visible (OMP_NUM_THREADS=$OMP_NUM_THREADS)"
 df -h /workspace | tail -1 | awk '{print "disk /workspace: " $4 " free of " $2}'
 
 step "2/5 Python environment ($VENV)"

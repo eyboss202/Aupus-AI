@@ -16,6 +16,11 @@ drawn from ``np.random.default_rng([seed, e])``. The loader's whole state is
 ``(epoch, position)``, two integers saved in every checkpoint. After a crash
 the loader regenerates the same permutation and continues at exactly the next
 batch, with no repeated or skipped data.
+
+``position`` counts windows, not batches, so a run may resume with a different
+micro-batch size (for example a 24 GB rented GPU at 16 sequences per batch,
+then a 4 GB card at 1): the stream of windows stays the same, only how it is
+cut into batches changes. The seed, ``seq_len`` and the dataset must match.
 """
 
 from __future__ import annotations
@@ -104,7 +109,9 @@ class PretrainLoader:
         }
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
-        for key in ("seed", "batch_size", "seq_len", "num_windows"):
+        # batch_size is saved but may differ (see the module docstring): the trainer checks
+        # that each optimizer step still sees the same number of sequences.
+        for key in ("seed", "seq_len", "num_windows"):
             mine = self.state_dict()[key]
             if state[key] != mine:
                 raise ValueError(f"loader state mismatch for {key}: checkpoint {state[key]}, current {mine}")

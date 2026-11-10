@@ -291,8 +291,50 @@ def test_refuses_to_overwrite_and_checks_resume(setup, tmp_path):
     Trainer(cfg, log=quiet).train()
     with pytest.raises(FileExistsError, match="--resume"):
         Trainer(cfg, log=quiet)
-    with pytest.raises(ValueError, match="loader state mismatch"):
+    # micro_batch alone changed: 2 x 2 sequences per step instead of 4 x 2 would be another run.
+    with pytest.raises(ValueError, match=r"8 sequences per step, now 2 x 2 = 4.*grad_accum=4"):
         Trainer(make_cfg(setup, tmp_path, max_steps=4, micro_batch=2), resume=True, log=quiet)
+    # Another seed means another data order: still refused by the loader.
+    with pytest.raises(ValueError, match="loader state mismatch for seed"):
+        Trainer(make_cfg(setup, tmp_path, max_steps=4, seed=7), resume=True, log=quiet)
+
+
+def interrupt_after(trainer: Trainer, step: int, monkeypatch) -> dict:
+    """Run ``trainer`` as if Ctrl-C was pressed during step ``step``: it finishes it, saves and stops."""
+    real_lr_at = pretrain.lr_at
+
+    def lr_at_with_interrupt(s, cfg, max_steps):
+        if s == step - 1:
+            trainer._stop_requested = True
+        return real_lr_at(s, cfg, max_steps)
+
+    monkeypatch.setattr(pretrain, "lr_at", lr_at_with_interrupt)
+    try:
+        return trainer.train()
+    finally:
+        monkeypatch.setattr(pretrain, "lr_at", real_lr_at)
+
+
+def test_resume_with_another_micro_batch_continues_the_same_run(setup, tmp_path, monkeypatch):
+    # A run started on a big GPU (4 x 2) and finished on a small one (1 x 8): same data per step.
+    full = Trainer(make_cfg(setup, tmp_path, run_name="full"), log=quiet)
+    full.train()
+    cut = Trainer(make_cfg(setup, tmp_path, run_name="moved"), log=quiet)
+    assert interrupt_after(cut, 3, monkeypatch)["step"] == 3
+
+    small = {"run_name": "moved", "micro_batch": 1, "grad_accum": 8}
+    with pytest.raises(ValueError, match="pass eval_batches=8"):  # 2 val batches of 4 = 8 sequences
+        Trainer(make_cfg(setup, tmp_path, **small), resume=True, log=quiet)
+
+    lines = []
+    moved = Trainer(make_cfg(setup, tmp_path, **small, eval_batches=8), resume=True, log=lines.append)
+    assert any("micro-batch 4 x 2 -> 1 x 8" in line for line in lines)
+    assert moved.train()["finished"]
+    assert moved.loader.state_dict()["position"] == full.loader.state_dict()["position"]
+    # Not bit-identical (sums in another order), but the same training up to rounding.
+    pf, pm = params_of(full), params_of(moved)
+    assert all(torch.allclose(pf[k], pm[k], atol=1e-5) for k in pf)
+    assert math.isclose(moved.best_val_loss, full.best_val_loss, rel_tol=1e-5)
 
 
 def test_samples_continue_the_prompt_and_are_reproducible(setup, tmp_path):

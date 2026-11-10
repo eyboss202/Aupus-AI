@@ -300,6 +300,7 @@ class Trainer:
             raise ValueError(
                 f"model config changed since {path}:\n  saved:   {saved_model}\n  current: {self.model_cfg}"
             )
+        self._check_batch_change(state["train_config"], path)
         self.model.load_state_dict(state["model"])
         self.optimizer.load_state_dict(state["optimizer"])
         self.scaler.load_state_dict(state["scaler"])
@@ -316,6 +317,51 @@ class Trainer:
             kept = [line for line in lines if json.loads(line)["step"] <= self.step]
             metrics.write_text("".join(line + "\n" for line in kept), encoding="utf-8")
         self.log(f"resumed from {path} at step {self.step}")
+
+    def _check_batch_change(self, saved: dict[str, Any], path: Path) -> None:
+        """Allow a resume with another ``micro_batch`` only if every step still sees the same data.
+
+        A run can move between machines with different memory (a rented GPU at 16 x 16,
+        a 4 GB card at 1 x 256). That is the same training as long as
+        ``micro_batch x grad_accum`` (sequences per optimizer step) is unchanged: the loader
+        hands out the same windows in the same order, only cut into smaller batches. The
+        result is not bit-identical (sums run in another order, maybe another precision).
+
+        Validation reads the first ``micro_batch x eval_batches`` val sequences, so that
+        count must stay the same too, or val loss (and the choice of ``best.pt``) would
+        compare different text before and after the move.
+        """
+        cfg = self.cfg
+        old_mb, old_accum = saved["micro_batch"], saved["grad_accum"]
+        old_step, new_step = old_mb * old_accum, cfg.micro_batch * cfg.grad_accum
+        if old_step != new_step:
+            hint = (
+                f" (e.g. grad_accum={old_step // cfg.micro_batch})" if old_step % cfg.micro_batch == 0 else ""
+            )
+            raise ValueError(
+                f"{path} was trained with micro_batch {old_mb} x grad_accum {old_accum} = {old_step} "
+                f"sequences per step, now {cfg.micro_batch} x {cfg.grad_accum} = {new_step}: keep the "
+                f"product the same{hint}"
+            )
+        if old_mb == cfg.micro_batch:
+            return
+        if "eval_batches" in saved and hasattr(cfg, "eval_batches"):
+            old_val, new_val = old_mb * saved["eval_batches"], cfg.micro_batch * cfg.eval_batches
+            if old_val != new_val:
+                hint = (
+                    f": pass eval_batches={old_val // cfg.micro_batch}"
+                    if old_val % cfg.micro_batch == 0
+                    else ""
+                )
+                raise ValueError(
+                    f"{path} evaluated on {old_val} val sequences ({saved['eval_batches']} batches of "
+                    f"{old_mb}), now {new_val} ({cfg.eval_batches} of {cfg.micro_batch}); val loss "
+                    f"and best.pt need the same ones{hint}"
+                )
+        self.log(
+            f"micro-batch {old_mb} x {old_accum} -> {cfg.micro_batch} x {cfg.grad_accum}: same "
+            f"{new_step} sequences per step in the same order (not bit-identical across the change)"
+        )
 
     # ------------------------------------------------------------ eval + samples
 

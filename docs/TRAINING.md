@@ -96,6 +96,33 @@ python scripts/train.py --resume runs/aupus-0.1-base
 Don't use `--config` again for a run that already exists: it refuses, so a run is never
 overwritten by accident.
 
+### Moving a run to another machine
+
+A run can start on one machine and finish on another, for example a rented GPU first and
+this PC afterwards. Copy the whole run folder (`runs/aupus-0.1-base/`, at least the newest
+`step_NNNNNN.pt`, `config.yaml` and `model.yaml`), make sure the new machine has the same
+`data/pretrain/fineweb_edu/` (copied, or rebuilt with step 1: the result is identical),
+and resume there.
+
+If the new GPU has less memory, give it a smaller `micro_batch` and a bigger `grad_accum`
+with the **same product**, so each step still trains on the same 256 sequences in the same
+order. Also scale `eval_batches` so validation still reads the same sequences
+(`micro_batch × eval_batches` unchanged), and set the memory settings and the save/eval
+frequencies back to this card's. A run started at 16 × 16 with `eval_batches=50`
+continues on the GTX 1650 Super with:
+
+```powershell
+python scripts/train.py --resume runs/aupus-0.1-base micro_batch=1 grad_accum=256 eval_batches=800 grad_checkpointing=true cuda_memory_limit_gib=2.9 save_every=10 eval_every=40 sample_every=200 log_every=1
+```
+
+Training refuses a resume that would change the sequences per step or the validation set,
+and says which value to pass. The new values are saved in the run's `config.yaml`, so later
+resumes on this PC are the plain `--resume` command again. The model after the move isn't
+bit-identical to a run that stayed on one machine (the sums run in a different order, and
+a newer GPU trains in bf16 where this card uses fp32), but the data, its order and the
+learning-rate schedule are exactly the same. Resuming with the same `micro_batch` is
+still bit-identical.
+
 ### Watching it
 
 In a **second** terminal (activate the environment there too), this shows how far the run
@@ -159,6 +186,7 @@ resets on reboot).
 | `CUDA out of memory` | Close GPU-heavy programs, or set `grad_checkpointing: true` in the config (or add `grad_checkpointing=true` to the `--resume` command) |
 | `loss is nan` and the run stops | Resume from the last checkpoint; if it happens again at the same place, lower the learning rate: `--resume runs/aupus-0.1-base optim.lr=3e-4` |
 | `already has checkpoints; pass --resume` | You used `--config` for an existing run: use `--resume` instead |
+| `sequences per step ... keep the product the same` or `... pass eval_batches=N` | You changed `micro_batch` when resuming: change `grad_accum` and `eval_batches` with it, as the message says ("Moving a run to another machine") |
 | `shards were tokenized with ... sha256` | The tokenizer file changed (often Windows line endings). Run `git checkout -- data/tokenizer/` |
 | Very slow (`tok/s` far below normal) | See "Using the PC while it trains" |
 

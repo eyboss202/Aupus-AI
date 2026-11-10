@@ -304,8 +304,25 @@ def test_loader_is_deterministic_and_resumable(stream_dir):
 
     c = PretrainLoader(stream_dir, "train", batch_size=4, seq_len=99, seed=2)
     assert not torch.equal(next(c)[0], next(PretrainLoader(stream_dir, "train", 4, 99, seed=1))[0])
-    with pytest.raises(ValueError, match="mismatch for batch_size"):
-        PretrainLoader(stream_dir, "train", batch_size=8, seq_len=99, seed=1).load_state_dict(state)
+    with pytest.raises(ValueError, match="mismatch for seed"):
+        c.load_state_dict(state)
+
+
+def test_loader_resumes_with_another_batch_size(stream_dir):
+    # Moving a run to a machine with less memory: the same windows in the same order,
+    # only cut into smaller (or bigger) batches, also across the epoch boundary.
+    a = PretrainLoader(stream_dir, "train", batch_size=4, seq_len=99, seed=1)
+    for _ in range(6):
+        next(a)
+    state = a.state_dict()
+    expected = torch.cat([next(a)[0] for _ in range(5)])  # windows 24..43: crosses into epoch 1
+
+    for batch_size in (1, 2, 5):
+        b = PretrainLoader(stream_dir, "train", batch_size=batch_size, seq_len=99, seed=1)
+        b.load_state_dict(state)
+        got = torch.cat([next(b)[0] for _ in range(len(expected) // batch_size)])
+        assert torch.equal(got, expected)
+        assert (b.epoch, b.position) == (a.epoch, a.position)
 
 
 def test_eval_batches_is_ordered_and_finite(stream_dir):

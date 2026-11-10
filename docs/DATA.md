@@ -11,11 +11,12 @@ at the end.
 | [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) `sample-10BT`, revision `87f0914` | Tokenizer training (300 MB), pretraining (~2.5B tokens) | ODC-By 1.0 | Prepared: 2.94B train + 14.6M val tokens (M7) |
 | [OpenAssistant oasst2](https://huggingface.co/datasets/OpenAssistant/oasst2), revision `179dd21` (English, top-ranked branches) | SFT | Apache-2.0 | Converted: 5,270 conversations |
 | [Databricks Dolly 15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k), revision `bdd27f4` | SFT | CC BY-SA 3.0 | Converted: 15,011 conversations |
-| `data/identity.jsonl` (hand-written) | SFT | Apache-2.0 | **To be written** (see below) |
+| `data/identity.jsonl` (questions hand-written; replies AI-assisted, see below) | SFT | Apache-2.0 | 44 conversations (2026-11-10) |
 | HellaSwag, ARC-Easy, PIQA | Evaluation only, never training | MIT / CC BY-SA 4.0 / AFL-3.0 | Converted (see below) |
 
 Only human-written, openly licensed text is used. No LLM-generated instruction
-data and no other model's outputs. English Wikipedia was considered and
+data and no other model's outputs. **One declared exception:** most replies in the small
+identity set were corrected with an AI assistant's help (see `data/identity.jsonl` below). English Wikipedia was considered and
 declined for 0.1 (share-alike licensing, see `docs/PLAN.md` §10).
 
 FineWeb-Edu is Common Crawl web text that Hugging Face filtered for
@@ -185,8 +186,16 @@ that led us to leave Wikipedia out of pretraining (decision 4). To train without
 The only training text in git. A few dozen short conversations that tell the
 model what it is, so "who are you?" gets a true answer: its name, that it is a
 small open-source model built from scratch as a learning project, that it can be
-wrong, has no internet access and doesn't remember past chats. **It must be
-written by a person**, like all training data here: no model-generated text.
+wrong, has no internet access and doesn't remember past chats. The rule was that it is
+written by a person, like all training data here.
+
+**Declared exception (2026-11-10).** The 44 user questions and one reply were written by
+the project author. The author's first replies described a generic large assistant (coding,
+translation, many languages, cloud servers) and never used the name Aupus, so at the
+author's request an AI assistant (Claude, used to develop this project) rewrote 43 of the
+44 replies to state the true facts of `docs/IDENTITY.md`, keeping the author's wording
+where it was already true. Those replies are therefore AI-written text: about 1,100 tokens,
+repeated 3× in fine-tuning, next to ~4.5M tokens of human-written conversations.
 One conversation per line:
 
 ```json

@@ -287,11 +287,14 @@ config, the tokenizer, `release.json` (source checkpoint, step, val loss, SHA-25
 and the model card.
 
 The browser chat streams replies as they are written and has a Stop button, a "New chat"
-button and the sampling settings. A model picker at the top switches between the chat models it
+button (with Undo) and the sampling settings. Under a reply are Copy, "Try again", the model that
+wrote it, its length in tokens and its speed; "Edit" (or the Up arrow in an empty box) puts your
+last message back in the box. A small meter in the message box shows how much of the model's
+1,024-token memory the conversation fills. A model picker at the top switches between the chat models it
 finds in `release/` and `runs/` (each release, and each fine-tuning checkpoint with its step and
 val loss; base models are left out), keeping the conversation. Replies and the interface are set in Instrument Sans, the
 headings in Newsreader (both under the SIL Open Font License, bundled in `aupus/cli/fonts/`, so the
-page also works offline), in a light or dark theme that follows your system. It runs on your computer only (it listens on 127.0.0.1 and
+page also works offline), in a light or dark theme that follows your system unless you pick one. It runs on your computer only (it listens on 127.0.0.1 and
 refuses requests from other sites). "Save chat" writes the conversation to `data/chats/`
 (never committed) in the format of the fine-tuning data, so you can correct the replies by
 hand and train on them. Chatting never changes the model by itself.

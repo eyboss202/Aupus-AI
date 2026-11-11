@@ -21,7 +21,9 @@ keeping with the project's minimal dependencies) and one static HTML page
   ``--model`` it started with; the page can only pick from that list, never send a path;
 * ``POST /api/chat``: ``{"messages": [...], "settings": {...}}`` -> a stream of
   server-sent events: ``token`` (a piece of text), ``dropped`` (how many old
-  messages no longer fit), ``done`` (the full reply) or ``error``;
+  messages no longer fit), ``done`` (the full reply, ``finish``: ``"stop"`` when the model
+  ended it or ``"length"`` when it ran out of room, and ``usage``: the token counts) or
+  ``error`` (generation failed part-way; the text so far stays on the page);
 * ``POST /api/save``: writes the conversation to ``<save-dir>/chat-<time>.jsonl``
   in the format of ``data/identity.jsonl``, so it can be corrected by hand and
   added to the fine-tuning data. Nothing is ever saved automatically.
@@ -42,6 +44,7 @@ on a network you trust.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import gc
 import json
@@ -140,6 +143,7 @@ def reply_events(
         ids, kept = fit_history(tok, messages, window, reserve)
     except ValueError as e:
         raise RequestError(str(e)) from None
+    stops = (tok.special_id(END), tok.special_id(EOS))
     generator = None
     if seed is not None:
         generator = torch.Generator(device=next(model.parameters()).device).manual_seed(seed)
@@ -151,7 +155,7 @@ def reply_events(
         top_k=int(settings["top_k"]) or None,
         top_p=settings["top_p"] if settings["top_p"] < 1 else None,
         repetition_penalty=settings["repetition_penalty"],
-        stop_ids=[tok.special_id(END), tok.special_id(EOS)],
+        stop_ids=stops,
         generator=generator,
         vocab_limit=tok.vocab_size,
     )
@@ -160,8 +164,10 @@ def reply_events(
         if len(kept) < len(messages):
             yield {"type": "dropped", "count": len(messages) - len(kept)}
         text = TextStream(tok)
+        count, last = 0, None
         try:
             for token in tokens:
+                count, last = count + 1, token
                 piece = text.push(token)
                 if piece:
                     yield {"type": "token", "text": piece}
@@ -170,7 +176,14 @@ def reply_events(
         tail = text.flush()
         if tail:
             yield {"type": "token", "text": tail}
-        yield {"type": "done", "reply": text.text.strip()}
+        yield {
+            "type": "done",
+            "reply": text.text.strip(),
+            # "length": the reply used every token it was allowed (or the window), so it may be cut off.
+            "finish": "stop" if last in stops else "length",
+            # For the page's memory meter: the conversation as the model saw it, and this reply.
+            "usage": {"prompt_tokens": len(ids), "completion_tokens": count, "context_length": window},
+        }
 
     return events()
 
@@ -510,6 +523,10 @@ class ChatHandler(BaseHTTPRequestHandler):
             self.server.generating.release()
         self._json(HTTPStatus.OK, self.server.info())
 
+    def _event(self, event: dict[str, Any]) -> None:
+        self.wfile.write(f"data: {json.dumps(event)}\n\n".encode())
+        self.wfile.flush()
+
     def _chat(self) -> None:
         body = self._read_json()
         messages = parse_messages(body.get("messages"), for_generation=True)
@@ -524,10 +541,15 @@ class ChatHandler(BaseHTTPRequestHandler):
             self.end_headers()  # HTTP/1.0: the connection closes after the stream, no length needed
             try:
                 for event in events:
-                    self.wfile.write(f"data: {json.dumps(event)}\n\n".encode())
-                    self.wfile.flush()
+                    self._event(event)
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 pass  # the page pressed Stop or was closed: stop generating
+            except Exception as e:  # noqa: BLE001 (e.g. the GPU ran out of memory part-way)
+                # The 200 and part of the reply are already sent, so tell the page: it would
+                # otherwise take the cut-off text for the whole reply. The server keeps running.
+                print(f"error while writing a reply: {e!r}", file=sys.stderr, flush=True)
+                with contextlib.suppress(OSError):  # the page may be gone as well
+                    self._event({"type": "error", "message": f"generation failed ({type(e).__name__}: {e})"})
             finally:
                 events.close()
         finally:

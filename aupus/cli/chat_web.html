@@ -2,11 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f6f2">
 <title>Aupus Chat</title>
 <link rel="icon" type="image/svg+xml" href="/logo.svg">
 <link rel="preload" href="/fonts/newsreader-latin-standard-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/instrument-sans-latin-standard-normal.woff2" as="font" type="font/woff2" crossorigin>
+<script>
+  // Before the first paint, so the page never flashes the wrong theme: the one chosen here
+  // before ("light" or "dark"), otherwise the system's. The script at the end keeps it up to date.
+  (function () {
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem("aupus.theme")); } catch (e) {}
+    var dark = saved === "dark" || (saved !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  })();
+</script>
 <style>
   /* Two typefaces, bundled with Aupus (SIL Open Font License): Newsreader, a serif, for the name and
      the headings only; Instrument Sans for everything else, including what Aupus writes. */
@@ -15,42 +26,53 @@
   @font-face { font-family: "Instrument Sans"; font-style: normal; font-weight: 400 700; font-display: swap;
                src: url("/fonts/instrument-sans-latin-standard-normal.woff2") format("woff2"); }
 
-  /* Paper and ink, with Aupus blue (the colour of its owl) as the one accent. */
+  /* Paper and ink, with Aupus blue (the colour of its owl) as the one accent.
+     --muted is for small text that has to be read (4.5:1 or better on every surface);
+     --faint only for placeholders, disabled things and decoration. */
   :root {
+    color-scheme: light;
     --serif: "Newsreader", Georgia, "Times New Roman", serif;
     --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
     --bg: #f7f6f2; --surface: #ffffff; --user: #ebe8df; --hover: #efede6;
-    --text: #1d1c22; --muted: #74726b; --faint: #a9a69d; --border: #e2dfd6;
-    --ink: #1d1c22; --on-ink: #f7f6f2; --brand: #14308c; --on-brand: #ffffff; --focus: #3b5bdb; --danger: #b4321f;
+    --text: #1d1c22; --muted: #696760; --faint: #8b8880; --border: #e2dfd6; --border-strong: #cdc9be;
+    --ink: #1d1c22; --on-ink: #f7f6f2; --brand: #14308c; --on-brand: #ffffff; --focus: #3b5bdb;
+    --danger: #b4321f; --warn: #8a5a00;
+    --ring: rgba(20, 48, 140, .13); --select: rgba(20, 48, 140, .18);
     --shadow: 0 1px 2px rgba(29, 28, 34, .04), 0 6px 24px rgba(29, 28, 34, .05);
+    --shadow-up: 0 2px 6px rgba(29, 28, 34, .08), 0 12px 32px rgba(29, 28, 34, .12);
   }
   :root[data-theme="dark"] {
+    color-scheme: dark;
     --bg: #1b1b1f; --surface: #242429; --user: #2f2f35; --hover: #2a2a30;
-    --text: #ecebe6; --muted: #a3a19a; --faint: #6f6d67; --border: #36363d;
-    --ink: #ecebe6; --on-ink: #1b1b1f; --brand: #8eaaf5; --on-brand: #0f1530; --focus: #8eaaf5; --danger: #f08a6f;
+    --text: #ecebe6; --muted: #a3a19a; --faint: #85837c; --border: #36363d; --border-strong: #4a4a52;
+    --ink: #ecebe6; --on-ink: #1b1b1f; --brand: #8eaaf5; --on-brand: #0f1530; --focus: #8eaaf5;
+    --danger: #f08a6f; --warn: #e0b060;
+    --ring: rgba(142, 170, 245, .16); --select: rgba(142, 170, 245, .28);
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 24px rgba(0, 0, 0, .25);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #1b1b1f; --surface: #242429; --user: #2f2f35; --hover: #2a2a30;
-      --text: #ecebe6; --muted: #a3a19a; --faint: #6f6d67; --border: #36363d;
-      --ink: #ecebe6; --on-ink: #1b1b1f; --brand: #8eaaf5; --on-brand: #0f1530; --focus: #8eaaf5; --danger: #f08a6f;
-      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 24px rgba(0, 0, 0, .25);
-    }
+    --shadow-up: 0 2px 6px rgba(0, 0, 0, .35), 0 12px 32px rgba(0, 0, 0, .4);
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  body { background: var(--bg); color: var(--text); font: 15px/1.55 var(--sans); display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
-  button { font: inherit; color: inherit; }
-  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+  button, select, textarea, input { font: inherit; color: inherit; }
+  button { -webkit-tap-highlight-color: transparent; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  ::selection { background: var(--select); }
+  [hidden] { display: none !important; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #announce { position: fixed; top: 0; left: 0; }
   .icon { width: 18px; height: 18px; flex: none; }
   .mark { color: var(--brand); flex: none; }
+  #app { height: 100%; height: 100dvh; display: flex; flex-direction: column; }
 
   /* ---------------------------------------------------------------- header */
-  header { display: flex; align-items: center; gap: 6px; padding: 12px 16px; }
+  header { display: flex; align-items: center; gap: 6px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top));
+    border-bottom: 1px solid transparent; transition: border-color .2s; }
+  body.scrolled header { border-bottom-color: var(--border); }
   .brand { display: flex; align-items: center; gap: 9px; font: 450 23px/1 var(--serif); letter-spacing: -.2px; margin-right: auto; padding-left: 4px; }
   .brand .mark { height: 30px; width: 22.4px; margin-top: -3px; }
-  #model { font-size: 12.5px; color: var(--faint); margin-right: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  #model { font-size: 12.5px; color: var(--muted); margin-right: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-variant-numeric: tabular-nums; }
+  #model.loading { animation: breathe 1.4s ease-in-out infinite; }
   /* The model picker: a quiet pill until it's needed; the chevron follows the theme's text colour. */
   .model-pick { position: relative; display: flex; flex: 0 1 auto; min-width: 0; color: var(--muted); margin-right: 4px; }
   .model-pick::after { content: ""; position: absolute; right: 12px; top: 50%; width: 6px; height: 6px; pointer-events: none;
@@ -60,80 +82,163 @@
   #modelSelect { appearance: none; -webkit-appearance: none; font: 500 13px/1.2 var(--sans); color: inherit; background: transparent;
     border: 1px solid var(--border); border-radius: 9px; padding: 8px 30px 8px 12px; width: 100%; max-width: 360px; min-width: 0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-  #modelSelect:hover:not(:disabled) { background: var(--hover); }
+  #modelSelect:hover:not(:disabled) { background: var(--hover); border-color: var(--border-strong); }
   #modelSelect:disabled { cursor: default; opacity: .6; }
   #modelSelect option { background: var(--surface); color: var(--text); }
-  .icon-btn { width: 36px; height: 36px; border-radius: 9px; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; color: var(--muted); }
+  .icon-btn { width: 36px; height: 36px; border-radius: 9px; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; color: var(--muted); flex: none; }
   .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+  .icon-btn:active:not(:disabled) { transform: scale(.94); }
   .icon-btn:disabled { opacity: .3; cursor: default; }
 
+  /* ---------------------------------------------------------------- notices above the conversation */
+  .banner { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 9px 14px; color: var(--muted); font-size: 13.5px; margin: 2px 0 8px; }
+  .banner.offline { color: var(--danger); border-color: currentColor; }
+  .banner span { flex: 1; min-width: 0; }
+  .banner button { flex: none; border: 1px solid currentColor; background: transparent; border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
+  .banner button:hover { background: var(--hover); }
+
   /* ---------------------------------------------------------------- empty state: everything centred */
-  main { flex: 1; overflow-y: auto; }
-  .column { max-width: 740px; margin: 0 auto; padding: 0 20px; }
+  main { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+  .column { width: 100%; max-width: 740px; margin: 0 auto; padding: 0 20px; }
   #hero { min-height: 100%; display: flex; flex-direction: column; justify-content: center; padding-bottom: 12vh; }
   #hero .hero-owl { display: block; height: 76px; width: 56.8px; margin: 0 auto 18px; color: var(--brand); }
-  #hero h1 { font: 380 42px/1.15 var(--serif); letter-spacing: -.6px; text-align: center; margin: 0 0 10px; }
-  #hero .sub { text-align: center; color: var(--muted); margin: 0 0 30px; }
+  #hero h1 { font: 380 42px/1.15 var(--serif); letter-spacing: -.6px; text-align: center; margin: 0 0 10px; text-wrap: balance; }
+  #hero .sub { text-align: center; color: var(--muted); margin: 0 0 30px; text-wrap: balance; }
   .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
-  .chip { border: 1px solid var(--border); background: transparent; border-radius: 999px; padding: 6px 14px; font-size: 13.5px; color: var(--muted); cursor: pointer; }
-  .chip:hover { color: var(--brand); border-color: var(--brand); background: transparent; }
+  .chip { border: 1px solid var(--border); background: transparent; border-radius: 999px; padding: 6px 14px; font-size: 13.5px; color: var(--muted); cursor: pointer;
+    transition: color .15s, border-color .15s, background-color .15s; }
+  .chip:hover:not(:disabled) { color: var(--brand); border-color: var(--brand); background: var(--ring); }
+  .chip:disabled { opacity: .5; cursor: default; }
   body.chatting #hero { display: none; }
   body:not(.chatting) #log { display: none; }
 
   /* ---------------------------------------------------------------- conversation */
-  #log { padding: 18px 20px 30px; display: flex; flex-direction: column; gap: 22px; }
-  .banner { border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; color: var(--muted); font-size: 13.5px; margin: 6px 0 0; }
-  .msg { animation: appear .2s ease both; }
-  .msg.user { align-self: flex-end; max-width: 82%; background: var(--user); border-radius: 18px; padding: 9px 15px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15.5px; }
-  .msg.assistant { display: grid; grid-template-columns: 26px 1fr; column-gap: 12px; }
-  .msg.assistant .mark { height: 24px; width: 18px; margin-top: 1px; color: var(--brand); justify-self: center; }
-  .msg.assistant .text { font: 400 16px/1.7 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
-  .msg.assistant .text.thinking { font-style: italic; color: var(--muted); animation: breathe 1.6s ease-in-out infinite; }
-  .actions { grid-column: 2; display: flex; gap: 2px; margin: 6px 0 0 -8px; }
-  .actions button { border: 0; background: transparent; color: var(--faint); cursor: pointer; font-size: 12.5px; display: flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 7px; }
+  #log { padding-top: 18px; padding-bottom: 30px; display: flex; flex-direction: column; gap: 28px; }
+  .msg.fresh { animation: appear .2s ease both; }
+  .msg.editing { opacity: .45; }
+  .msg.user { align-self: flex-end; max-width: 82%; display: flex; flex-direction: column; align-items: flex-end; }
+  .msg.user .bubble { background: var(--user); border-radius: 18px; padding: 9px 15px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15.5px; }
+  .msg.assistant { display: grid; grid-template-columns: 26px minmax(0, 1fr); column-gap: 12px; }
+  .msg.assistant .mark { height: 24px; width: 18px; margin-top: 1px; justify-self: center; }
+  .msg.assistant .body { position: relative; }
+  .msg.assistant .text { font: 400 16px/1.7 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; min-height: 27px; }
+  .msg.assistant .text.empty { color: var(--muted); font-style: italic; }
+  /* While Aupus writes: three dots until the first word, then a caret after the last one. */
+  .dots { display: inline-flex; align-items: center; gap: 5px; height: 27px; vertical-align: top; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); opacity: .45; animation: dot 1.2s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .15s; }
+  .dots i:nth-child(3) { animation-delay: .3s; }
+  .text.streaming::after { content: ""; display: inline-block; width: 7px; height: 1.05em; margin-left: 2px; vertical-align: -.18em;
+    border-radius: 1.5px; background: var(--brand); animation: blink 1s steps(2, jump-none) infinite; }
+  /* Under a message: what can be done with it, and (for a reply) which model wrote it and how fast.
+     Always there for the newest exchange. With a mouse, the older replies show theirs on hover or
+     keyboard focus, in the space between two messages, so the conversation keeps an even rhythm. */
+  .actions { display: flex; align-items: center; gap: 2px; min-height: 27px; margin: 5px 0 0 -8px; transition: opacity .15s; }
+  .msg.user .actions { margin: 4px -8px 0 0; }
+  @media (hover: hover) {
+    .msg:not(.last) .actions { position: absolute; top: 100%; left: -8px; right: 0; margin: 0; opacity: 0; }
+    .msg:hover .actions, .msg:focus-within .actions { opacity: 1; }
+  }
+  .actions button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 12.5px; display: flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 7px; flex: none; }
   .actions button:hover { color: var(--text); background: var(--hover); }
   .actions .icon { width: 14px; height: 14px; }
-  .note { align-self: center; color: var(--faint); font-size: 12.5px; text-align: center; max-width: 90%; }
-  .note.error { color: var(--danger); }
+  .actions .meta { margin-left: auto; padding-left: 12px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .actions .meta .flag { color: var(--warn); }
+  .note { align-self: center; color: var(--muted); font-size: 12.5px; text-align: center; max-width: 90%; text-wrap: balance; }
 
   /* ---------------------------------------------------------------- composer */
-  #dock { padding: 8px 20px 14px; }
+  #dock { position: relative; padding: 8px 0 14px; padding-bottom: max(14px, env(safe-area-inset-bottom)); }
   body:not(.chatting) #dock { display: none; }
-  #composer { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow); padding: 12px 12px 10px 18px; }
-  #composer:focus-within { border-color: var(--faint); }
+  #jump { position: absolute; left: 50%; top: -44px; width: 34px; height: 34px; margin-left: -17px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--surface); color: var(--muted); box-shadow: var(--shadow); display: grid; place-items: center; cursor: pointer; animation: appear .15s ease both; }
+  #jump:hover { color: var(--text); border-color: var(--border-strong); }
+  #composer { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow); padding: 12px 12px 10px 18px;
+    transition: border-color .15s, box-shadow .15s; }
+  #composer:focus-within { border-color: color-mix(in srgb, var(--brand) 50%, var(--border)); box-shadow: var(--shadow), 0 0 0 4px var(--ring); }
+  .edit-bar { display: flex; align-items: center; gap: 8px; margin: -2px 0 6px; font-size: 12.5px; color: var(--brand); }
+  .edit-bar .icon { width: 14px; height: 14px; }
+  .edit-bar button { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 12.5px; padding: 2px 8px; border-radius: 7px; cursor: pointer; }
+  .edit-bar button:hover { color: var(--text); background: var(--hover); }
   textarea { display: block; width: 100%; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font: 16px/1.5 var(--sans); padding: 4px 0 8px; max-height: 220px; }
   textarea::placeholder { color: var(--faint); }
   #composer textarea:focus-visible { outline: none; }
-  .composer-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-  .composer-row .hint { font-size: 12px; color: var(--faint); margin-right: auto; }
-  #sendBtn { width: 34px; height: 34px; border-radius: 10px; border: 0; background: var(--brand); color: var(--on-brand); display: grid; place-items: center; cursor: pointer; flex: none; }
+  .composer-row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+  .composer-row .hint { font-size: 12px; color: var(--muted); margin-right: auto; }
+  /* How much of the model's small memory (its context window) this chat fills. */
+  .meter { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; cursor: help; }
+  .meter svg { width: 16px; height: 16px; flex: none; }
+  .meter circle { fill: none; stroke-width: 2.6; }
+  .meter .track { stroke: var(--border-strong); }
+  .meter .fill { stroke: var(--brand); stroke-linecap: round; transition: stroke-dasharray .4s ease; }
+  .meter.full { color: var(--warn); }
+  .meter.full .fill { stroke: var(--warn); }
+  #sendBtn { width: 34px; height: 34px; border-radius: 10px; border: 0; background: var(--brand); color: var(--on-brand); display: grid; place-items: center; cursor: pointer; flex: none;
+    transition: opacity .15s, transform .1s; }
+  #sendBtn:active:not(:disabled) { transform: scale(.94); }
   #sendBtn:disabled { opacity: .25; cursor: default; }
-  .disclaimer { text-align: center; font-size: 12px; color: var(--faint); margin-top: 9px; }
+  .disclaimer { text-align: center; font-size: 12px; color: var(--muted); margin: 9px 0 0; }
+
+  /* ---------------------------------------------------------------- passing messages (saved, cleared, errors) */
+  #toasts { position: fixed; top: 62px; left: 0; right: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 16px; pointer-events: none; }
+  .toast { pointer-events: auto; display: flex; align-items: center; gap: 4px; max-width: min(560px, 100%); background: var(--ink); color: var(--on-ink);
+    border-radius: 12px; padding: 7px 8px 7px 14px; font-size: 13.5px; line-height: 1.4; box-shadow: var(--shadow-up); animation: drop .2s ease both; }
+  .toast span { padding: 2px 8px 2px 0; overflow-wrap: anywhere; }
+  .toast.error { background: var(--danger); color: var(--bg); }
+  .toast button { flex: none; border: 0; background: transparent; color: inherit; cursor: pointer; border-radius: 7px; padding: 3px 9px; font-size: 13px; font-weight: 600; }
+  .toast button.x { padding: 3px; display: grid; place-items: center; opacity: .7; }
+  .toast button.x .icon { width: 15px; height: 15px; }
+  .toast button:hover { background: rgba(128, 128, 128, .28); opacity: 1; }
+  .toast :focus-visible { outline-color: currentColor; }
 
   /* ---------------------------------------------------------------- settings drawer */
-  #scrim { position: fixed; inset: 0; background: rgba(20, 20, 24, .35); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  #scrim { position: fixed; inset: 0; z-index: 10; background: rgba(20, 20, 24, .35); opacity: 0; pointer-events: none; transition: opacity .2s; }
   #scrim.open { opacity: 1; pointer-events: auto; }
-  #drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(370px, 92vw); background: var(--bg); border-left: 1px solid var(--border);
-    padding: 22px 24px; transform: translateX(105%); transition: transform .22s ease; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
-  #drawer.open { transform: none; }
+  #drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 20; width: min(380px, 92vw); background: var(--bg); border-left: 1px solid var(--border);
+    padding: 22px 24px 28px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
+    display: flex; flex-direction: column; gap: 20px;
+    transform: translateX(105%); visibility: hidden; transition: transform .22s ease, visibility 0s .22s; }
+  #drawer.open { transform: none; visibility: visible; transition: transform .22s ease; box-shadow: var(--shadow-up); }
   #drawer h2 { margin: 0; font: 420 25px/1.2 var(--serif); display: flex; align-items: center; justify-content: space-between; }
-  #drawer label { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; color: var(--muted); }
-  #drawer label span { display: flex; justify-content: space-between; color: var(--text); }
-  #drawer label b { font-weight: 600; font-variant-numeric: tabular-nums; }
-  #drawer small { color: var(--faint); font-size: 12px; line-height: 1.45; }
-  #drawer input[type=range] { accent-color: var(--brand); width: 100%; }
-  #drawer textarea { border: 1px solid var(--border); border-radius: 12px; padding: 9px 12px; background: var(--surface); min-height: 72px; font-size: 14px; }
+  #drawer h3 { margin: 6px 0 -8px; font: 600 11.5px/1.2 var(--sans); letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  #drawer h3:not(:first-of-type) { border-top: 1px solid var(--border); padding-top: 20px; }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+  .field > span { display: flex; justify-content: space-between; }
+  .field b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .field small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .field input[type=range] { accent-color: var(--brand); width: 100%; margin: 2px 0; cursor: pointer; }
+  .field textarea { border: 1px solid var(--border); border-radius: 12px; padding: 9px 12px; background: var(--surface); min-height: 72px; font-size: 14px; resize: vertical; max-height: 40vh; }
+  .field textarea:focus { border-color: color-mix(in srgb, var(--brand) 50%, var(--border)); box-shadow: 0 0 0 4px var(--ring); }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 11px; background: var(--hover); }
+  .seg label { position: relative; display: grid; }
+  .seg input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  .seg span { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 4px; border-radius: 8px; font-size: 13px; color: var(--muted); }
+  .seg .icon { width: 15px; height: 15px; }
+  .seg input:hover + span { color: var(--text); }
+  .seg input:checked + span { background: var(--surface); color: var(--text); font-weight: 500; box-shadow: 0 1px 2px rgba(0, 0, 0, .1); }
+  .seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 1px; }
   .reset { align-self: flex-start; border: 1px solid var(--border); background: transparent; border-radius: 9px; padding: 6px 12px; cursor: pointer; color: var(--muted); font-size: 13px; }
-  .reset:hover { color: var(--text); background: var(--hover); }
+  .reset:hover:not(:disabled) { color: var(--text); background: var(--hover); border-color: var(--border-strong); }
+  .reset:disabled { opacity: .5; cursor: default; }
+  .facts { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 16px; font-size: 13.5px; }
+  .facts dt { color: var(--muted); }
+  .facts dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .keys { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 2; }
+  kbd { font: 500 11.5px/1 var(--sans); color: var(--text); background: var(--surface); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 2px 5px; }
 
   @keyframes appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes drop { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
   @keyframes breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+  @keyframes dot { 0%, 60%, 100% { opacity: .3; transform: none; } 30% { opacity: 1; transform: translateY(-3px); } }
+  @keyframes blink { from { opacity: 1; } to { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
   @media (max-width: 600px) {
-    header { padding: 10px 10px; } #model { display: none; } .brand { flex: none; } .column { padding: 0 14px; } #log { padding: 14px 14px 24px; }
-    #hero h1 { font-size: 33px; } #dock { padding: 6px 12px 10px; } .composer-row .hint { display: none; }
-    .msg.assistant { grid-template-columns: 1fr; } .msg.assistant .mark { display: none; } .actions { grid-column: 1; }
+    header { padding-left: 10px; padding-right: 10px; } #model { display: none; } .brand { flex: none; } .column { padding: 0 14px; }
+    #log { padding-top: 14px; padding-bottom: 24px; } #hero h1 { font-size: 33px; } #dock { padding-top: 6px; } .composer-row .hint { display: none; }
+    .msg.assistant { grid-template-columns: minmax(0, 1fr); } .msg.assistant .mark { display: none; } .msg.user { max-width: 90%; }
+    .actions .meta .model-name { display: none; } #toasts { top: 58px; }
   }
+  @media (max-width: 440px) { .brand .word { display: none; } .meter span { display: none; } }
 </style>
 </head>
 <body>
@@ -159,80 +264,136 @@
   </g></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-system" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M9 20h6M12 16v4"/></g></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></g></symbol>
   <symbol id="i-new" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h8"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></g></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 4.5a2.1 2.1 0 0 1 3 3L8 19l-4 1 1-4Z"/><path d="M14.5 6.5l3 3"/></g></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.5h-4.5"/></g></symbol>
   <symbol id="i-save" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20h14"/></g></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></g></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
 </svg>
 
-<header>
-  <div class="brand"><svg class="mark" aria-hidden="true"><use href="#owl"/></svg>aupus</div>
-  <div class="model-pick disabled" id="modelPick" title="Which trained version of Aupus answers">
-    <select id="modelSelect" aria-label="Model" disabled><option>connecting…</option></select>
-  </div>
-  <div id="model"></div>
-  <button id="newBtn" class="icon-btn" type="button" title="New chat" aria-label="New chat"><svg class="icon"><use href="#i-new"/></svg></button>
-  <button id="saveBtn" class="icon-btn" type="button" disabled title="Save this chat to data/chats/, to correct by hand and train on" aria-label="Save chat"><svg class="icon"><use href="#i-save"/></svg></button>
-  <button id="settingsBtn" class="icon-btn" type="button" title="Settings" aria-label="Settings" aria-expanded="false"><svg class="icon"><use href="#i-sliders"/></svg></button>
-  <button id="themeBtn" class="icon-btn" type="button" title="Light / dark" aria-label="Switch between light and dark"><svg class="icon"><use href="#i-moon"/></svg></button>
-</header>
+<div id="app">
+  <header>
+    <div class="brand"><svg class="mark" aria-hidden="true"><use href="#owl"/></svg><span class="word">aupus</span></div>
+    <div class="model-pick disabled" id="modelPick" title="Which trained version of Aupus answers">
+      <select id="modelSelect" aria-label="Model" disabled><option>connecting…</option></select>
+    </div>
+    <div id="model"></div>
+    <button id="newBtn" class="icon-btn" type="button" disabled title="New chat" aria-label="New chat"><svg class="icon" aria-hidden="true"><use href="#i-new"/></svg></button>
+    <button id="saveBtn" class="icon-btn" type="button" disabled title="Save this chat to data/chats/, to correct by hand and train on" aria-label="Save chat for training"><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg></button>
+    <button id="settingsBtn" class="icon-btn" type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg></button>
+    <button id="themeBtn" class="icon-btn" type="button" title="Switch to dark" aria-label="Switch between light and dark"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg></button>
+  </header>
 
-<main id="main">
-  <section id="hero" class="column">
-    <svg class="hero-owl" aria-hidden="true"><use href="#owl-large"/></svg>
-    <h1>What shall we learn today?</h1>
-    <p class="sub">Aupus 0.1 is a small language model, built from scratch and still learning.</p>
-    <div id="heroSlot"></div>
-    <div class="chips" id="chips"></div>
-  </section>
-  <div class="column"><div id="banner" class="banner" hidden></div></div>
-  <div id="log" class="column" aria-live="polite"></div>
-</main>
+  <div class="column"><div id="banner" class="banner" role="status" hidden></div></div>
 
-<footer id="dock"><div class="column" id="dockSlot"></div></footer>
+  <main id="main">
+    <section id="hero" class="column">
+      <svg class="hero-owl" aria-hidden="true"><use href="#owl-large"/></svg>
+      <h1>What shall we learn today?</h1>
+      <p class="sub">Aupus 0.1 is a small language model, built from scratch and still learning.</p>
+      <div id="heroSlot">
+        <form id="composer">
+          <div id="editBar" class="edit-bar" hidden>
+            <svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg><span>Editing your last message. Sending it replaces the reply.</span>
+            <button id="cancelEditBtn" type="button">Cancel</button>
+          </div>
+          <textarea id="input" rows="1" placeholder="Ask Aupus anything" autocomplete="off" aria-label="Message"></textarea>
+          <div class="composer-row">
+            <span class="hint" id="hint">Enter to send · Shift+Enter for a new line</span>
+            <span class="meter" id="meter" role="img" hidden>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><circle class="track" cx="10" cy="10" r="8"/><circle class="fill" id="meterFill" cx="10" cy="10" r="8" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 10 10)"/></svg>
+              <span id="meterText"></span>
+            </span>
+            <button id="sendBtn" type="submit" aria-label="Send" title="Send" disabled><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
+          </div>
+        </form>
+        <p class="disclaimer" id="disclaimer">Aupus is small and can be wrong. Check anything that matters.</p>
+      </div>
+      <div class="chips" id="chips"></div>
+    </section>
+    <div id="log" class="column" aria-label="Conversation"></div>
+  </main>
 
-<form id="composer">
-  <textarea id="input" rows="1" placeholder="Ask Aupus anything" autocomplete="off" aria-label="Message"></textarea>
-  <div class="composer-row">
-    <span class="hint">Enter to send · Shift+Enter for a new line</span>
-    <button id="sendBtn" type="submit" aria-label="Send" title="Send"><svg class="icon"><use href="#i-send"/></svg></button>
-  </div>
-</form>
-<p class="disclaimer" id="disclaimer">Aupus is small and can be wrong. Check anything that matters.</p>
+  <footer id="dock">
+    <button id="jump" type="button" hidden title="Jump to the latest" aria-label="Jump to the latest message"><svg class="icon" aria-hidden="true"><use href="#i-down"/></svg></button>
+    <div class="column" id="dockSlot"></div>
+  </footer>
+</div>
+
+<div id="toasts" role="status" aria-live="polite"></div>
+<div id="announce" class="sr-only" role="status" aria-live="polite"></div>
 
 <div id="scrim"></div>
-<aside id="drawer" aria-label="Settings" aria-hidden="true">
-  <h2>Settings <button id="closeBtn" class="icon-btn" type="button" aria-label="Close settings"><svg class="icon"><use href="#i-close"/></svg></button></h2>
-  <label>System message
+<aside id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" inert>
+  <h2><span id="drawerTitle">Settings</span> <button id="closeBtn" class="icon-btn" type="button" aria-label="Close settings"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></h2>
+
+  <h3 id="themeLabel">Appearance</h3>
+  <div class="seg" role="radiogroup" aria-labelledby="themeLabel">
+    <label><input type="radio" name="theme" value="system"><span><svg class="icon" aria-hidden="true"><use href="#i-system"/></svg>System</span></label>
+    <label><input type="radio" name="theme" value="light"><span><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg>Light</span></label>
+    <label><input type="radio" name="theme" value="dark"><span><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg>Dark</span></label>
+  </div>
+
+  <h3>Instructions</h3>
+  <label class="field"><span>System message</span>
     <textarea id="system" rows="3" placeholder="Optional, e.g. Answer in one or two sentences."></textarea>
-  </label>
-  <label><span>Temperature <b id="temperatureVal"></b></span><input id="temperature" type="range" min="0" max="1.5" step="0.05">
+    <small>Sent before the conversation, to tell Aupus how to answer.</small></label>
+
+  <h3>How Aupus picks its words</h3>
+  <label class="field"><span>Temperature <b id="temperatureVal"></b></span><input id="temperature" type="range" min="0" max="1.5" step="0.05" value="0.7">
     <small>Lower is more focused and predictable; higher is more varied, and more often wrong. 0 always picks the likeliest word.</small></label>
-  <label><span>Reply length <b id="max_new_tokensVal"></b></span><input id="max_new_tokens" type="range" min="16" max="512" step="16">
+  <label class="field"><span>Reply length <b id="max_new_tokensVal"></b></span><input id="max_new_tokens" type="range" min="16" max="512" step="16" value="256">
     <small>The most tokens a reply may use (a token is about ¾ of a word).</small></label>
-  <label><span>Top-p <b id="top_pVal"></b></span><input id="top_p" type="range" min="0.5" max="1" step="0.01">
+  <label class="field"><span>Top-p <b id="top_pVal"></b></span><input id="top_p" type="range" min="0.5" max="1" step="0.01" value="0.95">
     <small>Only the likeliest words that together reach this probability can be picked.</small></label>
-  <label><span>Repetition penalty <b id="repetition_penaltyVal"></b></span><input id="repetition_penalty" type="range" min="1" max="1.5" step="0.01">
+  <label class="field"><span>Top-k <b id="top_kVal"></b></span><input id="top_k" type="range" min="0" max="200" step="5" value="50">
+    <small>Only this many of the likeliest words can be picked. 0 turns the limit off.</small></label>
+  <label class="field"><span>Repetition penalty <b id="repetition_penaltyVal"></b></span><input id="repetition_penalty" type="range" min="1" max="1.5" step="0.01" value="1.1">
     <small>Makes words it has already used less likely. Small models easily repeat themselves.</small></label>
-  <button id="resetBtn" class="reset" type="button">Reset to defaults</button>
+  <button id="resetBtn" class="reset" type="button" disabled>Reset to defaults</button>
+
+  <h3>This model</h3>
+  <dl class="facts" id="facts"><dt>Status</dt><dd>connecting…</dd></dl>
+
+  <h3>Keyboard</h3>
+  <p class="keys"><kbd>Enter</kbd> send · <kbd>Shift</kbd> <kbd>Enter</kbd> new line<br><kbd>↑</kbd> in an empty box: edit your last message<br><kbd>Esc</kbd> stop the reply, or close this panel</p>
 </aside>
 
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const SLIDERS = ["temperature", "max_new_tokens", "top_p", "repetition_penalty"];
+const SLIDERS = ["temperature", "max_new_tokens", "top_p", "top_k", "repetition_penalty"];
 const SUGGESTIONS = ["What is a prime number?", "Why is the sky blue?", "Give me three tips for learning to read.", "Explain the water cycle simply."];
-const state = { messages: [], busy: false, switching: false, controller: null, info: null };
+const state = {
+  messages: [],      // {role, content} and, on Aupus's replies, meta: {model, tokens, tps, finish, used, window, dropped}
+  busy: false,       // a reply is being written
+  switching: false,  // a model is loading
+  online: null,      // null until the server first answers, then true or false
+  editing: null,     // {draft}: the last question is back in the box; draft is what was in the box before
+  controller: null,
+  info: null,
+};
 
 const store = {  // per-browser convenience only; the page works without it
   get(key) { try { return JSON.parse(localStorage.getItem("aupus." + key)); } catch { return null; } },
   set(key, value) { try { localStorage.setItem("aupus." + key, JSON.stringify(value)); } catch {} },
 };
 
+// Everything on the page is built with these: strings always become text nodes, never markup,
+// so nothing the model (or a saved chat) says can inject HTML.
+function el(tag, cls, ...children) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  node.append(...children);
+  return node;
+}
 function svgUse(id, cls) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", cls);
@@ -243,154 +404,313 @@ function svgUse(id, cls) {
   return svg;
 }
 const icon = (name) => svgUse("i-" + name, "icon");
+function button(cls, iconName, label, onClick) {
+  const b = el("button", cls, ...(iconName ? [icon(iconName)] : []), label);
+  b.type = "button";
+  b.addEventListener("click", onClick);
+  return b;
+}
+const count = (n) => Number(n).toLocaleString("en-US");
+const lastIndex = (role) => state.messages.findLastIndex((m) => m.role === role);
 
-// ---------------------------------------------------------------- theme
-function currentTheme() {
-  return document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+// ---------------------------------------------------------------- theme: the system's, unless one was chosen
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+let themeChoice = store.get("theme");  // "light", "dark", or anything else: follow the system
+function applyTheme() {
+  const chosen = themeChoice === "light" || themeChoice === "dark";
+  const theme = chosen ? themeChoice : (systemDark.matches ? "dark" : "light");
+  document.documentElement.dataset.theme = theme;
+  $("themeBtn").replaceChildren(icon(theme === "dark" ? "sun" : "moon"));
+  $("themeBtn").title = theme === "dark" ? "Switch to light" : "Switch to dark";
+  for (const radio of document.querySelectorAll('input[name="theme"]')) radio.checked = radio.value === (chosen ? themeChoice : "system");
+  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  if (bg) document.querySelector('meta[name="theme-color"]').content = bg;
 }
-function applyTheme(theme) {
-  if (theme) document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme;
-  $("themeBtn").replaceChildren(icon(currentTheme() === "dark" ? "sun" : "moon"));
+function setTheme(choice) { themeChoice = choice; store.set("theme", choice); applyTheme(); }
+$("themeBtn").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+for (const radio of document.querySelectorAll('input[name="theme"]')) radio.addEventListener("change", () => setTheme(radio.value === "system" ? null : radio.value));
+systemDark.addEventListener("change", applyTheme);
+applyTheme();
+
+// ---------------------------------------------------------------- passing messages
+function toast(text, { error = false, action = null, run = null, ms = 5000 } = {}) {
+  const node = el("div", "toast" + (error ? " error" : ""), el("span", "", text));
+  let timer = 0;
+  const close = () => { clearTimeout(timer); node.remove(); };
+  if (action) node.append(button("", null, action, () => { close(); run(); }));
+  const x = button("x", "close", "", close);
+  x.setAttribute("aria-label", "Dismiss");
+  node.append(x);
+  const box = $("toasts");
+  while (box.children.length >= 3) box.firstChild.remove();
+  box.append(node);
+  timer = setTimeout(close, error ? Math.max(ms, 9000) : ms);
+  return close;
 }
-$("themeBtn").addEventListener("click", () => { const next = currentTheme() === "dark" ? "light" : "dark"; applyTheme(next); store.set("theme", next); });
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(store.get("theme")));
-applyTheme(store.get("theme"));
+const announce = (text) => { $("announce").textContent = text; };  // for screen readers only
 
 // ---------------------------------------------------------------- layout: composer centred until the first message
 function setChatting(on) {
   document.body.classList.toggle("chatting", on);
   const slot = on ? $("dockSlot") : $("heroSlot");
-  if ($("composer").parentElement !== slot) slot.append($("composer"), $("disclaimer"));
+  if ($("composer").parentElement !== slot) {
+    const focused = document.activeElement === $("input");
+    slot.append($("composer"), $("disclaimer"));
+    if (focused) $("input").focus();  // moving an element drops its focus
+  }
+  if (!on) { $("jump").hidden = true; document.body.classList.remove("scrolled"); }
 }
 
+// ---------------------------------------------------------------- scrolling: follow the reply, unless the reader has scrolled up
+const main = $("main");
+let follow = true;
+const atBottom = () => main.scrollHeight - main.scrollTop - main.clientHeight < 40;
+function scrollDown(force) {
+  if (force) follow = true;
+  if (follow) main.scrollTop = main.scrollHeight;
+}
+main.addEventListener("scroll", () => {
+  follow = atBottom();
+  $("jump").hidden = follow || !document.body.classList.contains("chatting");
+  document.body.classList.toggle("scrolled", main.scrollTop > 4);
+}, { passive: true });
+$("jump").addEventListener("click", () => { follow = true; main.scrollTo({ top: main.scrollHeight, behavior: "smooth" }); $("input").focus(); });
+new ResizeObserver(() => scrollDown()).observe(main);  // the window or the message box changed size
+
 // ---------------------------------------------------------------- messages
-function scrollDown() { const m = $("main"); m.scrollTop = m.scrollHeight; }
-function addUser(text) {
-  const div = document.createElement("div");
-  div.className = "msg user";
-  div.textContent = text;  // always text, never HTML
-  $("log").appendChild(div);
-  scrollDown();
-  return div;
+function userNode(m, isLast) {
+  const row = el("div", "msg user" + (isLast ? " last" : ""), el("span", "sr-only", "You said:"), el("div", "bubble", m.content));
+  if (isLast && !state.busy) row.append(el("div", "actions", button("", "edit", "Edit", () => startEdit())));
+  return row;
 }
-function addAssistant(text) {
-  const row = document.createElement("div");
-  row.className = "msg assistant";
-  const body = document.createElement("div");
-  body.className = "text";
-  body.textContent = text;  // model output is inserted as text only: it can't inject markup
-  const actions = document.createElement("div");
-  actions.className = "actions";
-  const copy = document.createElement("button");
-  copy.type = "button";
-  copy.append(icon("copy"), "Copy");
-  copy.addEventListener("click", async () => {
-    let label = "Copied";
-    try { await navigator.clipboard.writeText(body.textContent); copy.replaceChildren(icon("check"), label); }
-    catch { label = "Couldn't copy"; copy.replaceChildren(icon("copy"), label); }
-    setTimeout(() => copy.replaceChildren(icon("copy"), "Copy"), 1500);
-  });
-  actions.appendChild(copy);
-  row.append(svgUse("owl", "mark"), body, actions);
-  $("log").appendChild(row);
-  scrollDown();
-  return { row, body, actions };
+function metaNode(meta) {
+  const node = el("span", "meta");
+  if (!meta) return node;
+  const parts = [];
+  if (meta.model) parts.push(el("span", "model-name", meta.model + " · "));
+  const facts = [];
+  if (meta.tokens != null) facts.push(count(meta.tokens) + (meta.tokens === 1 ? " token" : " tokens"));
+  if (meta.tps) facts.push((meta.tps < 10 ? meta.tps.toFixed(1) : Math.round(meta.tps)) + " tok/s");
+  parts.push(facts.join(" · "));
+  const flag = { length: "reached the reply length", stopped: "stopped", interrupted: "interrupted" }[meta.finish];
+  if (flag) parts.push(el("span", "flag", (facts.length ? " · " : "") + flag));
+  node.append(...parts);
+  node.title = [meta.model, ...facts, flag].filter(Boolean).join(" · ")
+    + (meta.finish === "length" ? ". It may be cut off: raise Reply length in Settings for longer replies." : "");
+  return node;
 }
-function addNote(text, isError) {
-  const div = document.createElement("div");
-  div.className = "note" + (isError ? " error" : "");
-  div.textContent = text;
-  $("log").appendChild(div);
-  scrollDown();
+function assistantNode(m, isLast) {
+  const text = el("div", "text" + (m.content ? "" : " empty"), m.content || "(no reply)");
+  const actions = el("div", "actions");
+  if (m.content) {
+    const copy = button("", "copy", "Copy", async () => {
+      let ok = true;
+      try { await navigator.clipboard.writeText(m.content); } catch { ok = false; }
+      copy.replaceChildren(icon(ok ? "check" : "copy"), ok ? "Copied" : "Couldn't copy");
+      setTimeout(() => copy.replaceChildren(icon("copy"), "Copy"), 1500);
+    });
+    actions.append(copy);
+  }
+  if (isLast && !state.busy) {
+    const again = button("", "retry", "Try again", regenerate);
+    again.title = "Write this reply again (with the model and settings chosen now)";
+    actions.append(again);
+  }
+  actions.append(metaNode(m.meta));
+  return el("div", "msg assistant" + (isLast ? " last" : ""), svgUse("owl", "mark"),
+    el("div", "body", el("span", "sr-only", "Aupus said:"), text, actions));
+}
+function droppedNote(n) {
+  const memory = state.info ? `${count(state.info.context_length)}-token ` : "";
+  return el("div", "note", `The ${n} oldest messages no longer fit in Aupus's ${memory}memory, so this reply was written without them.`);
+}
+// The reply being written: dots, then the text as it arrives (always as text, never HTML).
+function liveNode() {
+  const text = el("div", "text", el("span", "dots", el("i"), el("i"), el("i")), el("span", "sr-only", "Aupus is thinking"));
+  const words = document.createTextNode("");
+  const row = el("div", "msg assistant fresh last", svgUse("owl", "mark"), el("div", "body", text, el("div", "actions")));
+  return {
+    row,
+    push(piece) {
+      if (!words.isConnected) { text.replaceChildren(words); text.classList.add("streaming"); }
+      words.appendData(words.data ? piece : piece.trimStart());
+    },
+    text: () => words.data.trim(),
+  };
 }
 function renderAll() {
-  $("log").replaceChildren();
-  for (const m of state.messages) (m.role === "user" ? addUser : addAssistant)(m.content);
+  const log = $("log");
+  const top = main.scrollTop;
+  const lastUser = lastIndex("user");
+  const nodes = [];
+  state.messages.forEach((m, i) => {
+    if (m.role === "user") nodes.push(userNode(m, i === lastUser));
+    else {
+      if (m.meta?.dropped) nodes.push(droppedNote(m.meta.dropped));
+      nodes.push(assistantNode(m, i === state.messages.length - 1));
+    }
+    if (state.editing && i >= lastUser) nodes.at(-1).classList.add("editing");
+  });
+  log.replaceChildren(...nodes);
   setChatting(state.messages.length > 0);
-  updateButtons();
+  $("editBar").hidden = !state.editing;
+  if (follow) scrollDown(); else main.scrollTop = top;
+  updateMeter(); updateButtons();
 }
 function updateButtons() {
-  const last = state.messages[state.messages.length - 1];
-  $("saveBtn").disabled = state.busy || !last || last.role !== "assistant";
+  const last = state.messages.at(-1);
+  const idle = !state.busy && !state.switching;
+  const ready = idle && state.online === true;
+  $("saveBtn").disabled = !ready || last?.role !== "assistant";
   $("newBtn").disabled = state.busy || state.messages.length === 0;
-  $("sendBtn").replaceChildren(icon(state.busy ? "stop" : "send"));
-  $("sendBtn").setAttribute("aria-label", state.busy ? "Stop" : "Send");
-  $("sendBtn").title = state.busy ? "Stop" : "Send";
-  $("sendBtn").disabled = state.switching || (!state.busy && !$("input").value.trim());
-  const lockPicker = state.busy || state.switching || !state.info || state.info.models.length < 2;
+  const send = $("sendBtn");
+  const mode = state.busy ? "stop" : "send";
+  if (send.dataset.mode !== mode) {
+    send.dataset.mode = mode;
+    send.replaceChildren(icon(mode));
+    send.setAttribute("aria-label", state.busy ? "Stop" : "Send");
+    send.title = state.busy ? "Stop (Esc)" : "Send";
+  }
+  send.disabled = !state.busy && (!ready || !$("input").value.trim());
+  $("hint").textContent = state.busy ? "Esc to stop" : "Enter to send · Shift+Enter for a new line";
+  const lockPicker = !ready || state.info.models.length < 2;
   $("modelSelect").disabled = lockPicker;
   $("modelPick").classList.toggle("disabled", lockPicker);
+  for (const chip of $("chips").children) chip.disabled = !ready;
+}
+// How full the model's memory is, from the token counts the server sent with the last reply.
+function updateMeter() {
+  const meta = state.messages.findLast((m) => m.meta?.used != null)?.meta;
+  $("meter").hidden = !meta;
+  if (!meta) return;
+  const reserve = Math.min(Number($("max_new_tokens").value), meta.window / 2);  // kept free for the next reply
+  const full = meta.used + reserve >= meta.window;
+  $("meterFill").setAttribute("stroke-dasharray", `${Math.min(100, (100 * meta.used) / meta.window).toFixed(1)} 100`);
+  $("meterText").textContent = `${count(meta.used)} / ${count(meta.window)}`;
+  $("meter").classList.toggle("full", full);
+  const label = `This chat fills ${count(meta.used)} of the ${count(meta.window)} tokens Aupus can keep in mind. `
+    + (full ? "It is nearly full: the oldest messages will be left out of the next reply." : "When it fills up, the oldest messages are left out.");
+  $("meter").title = label;
+  $("meter").setAttribute("aria-label", label);
 }
 
 // ---------------------------------------------------------------- talking to the server
 function settings() { const out = {}; for (const k of SLIDERS) out[k] = Number($(k).value); return out; }
-function conversation() {
+function conversation() {  // what the server gets: roles and text only
   const system = $("system").value.trim();
-  return [...(system ? [{ role: "system", content: system }] : []), ...state.messages];
+  return [...(system ? [{ role: "system", content: system }] : []), ...state.messages.map(({ role, content }) => ({ role, content }))];
 }
 function persist() { store.set("messages", state.messages); store.set("settings", { ...settings(), system: $("system").value }); }
+const currentModel = () => state.info?.models.find((m) => m.id === state.info.model);
 
-async function send(text) {
-  setChatting(true);
-  state.messages.push({ role: "user", content: text });
-  const userDiv = addUser(text);
-  const { row, body, actions } = addAssistant("Thinking…");
-  body.classList.add("thinking"); actions.hidden = true;
-  state.busy = true; updateButtons();
+async function* events(res) {  // the server-sent events of a reply, parsed
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    let cut;
+    while ((cut = buffer.indexOf("\n\n")) >= 0) {
+      const line = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      if (line.startsWith("data: ")) yield JSON.parse(line.slice(6));
+    }
+  }
+}
+
+// Write Aupus's reply to the conversation, which must end with the user's turn. If nothing at all
+// gets written (an error, or Stop before the first word), `undo` puts the conversation back.
+async function generate(undo) {
+  state.busy = true;
+  renderAll();
+  const live = liveNode();
+  $("log").lastElementChild?.classList.add("fresh");  // the question just asked
+  $("log").append(live.row);
+  scrollDown(true);
   state.controller = new AbortController();
-  let reply = null, stopped = false, failed = false, started = false;
+  const model = currentModel()?.label;
+  let done = null, error = null, dropped = 0, firstAt = 0, doneAt = 0;
   try {
     const res = await fetch("/api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: conversation(), settings: settings() }),
       signal: state.controller.signal,
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText || `HTTP ${res.status}`);
+    for await (const ev of events(res)) {
+      if (ev.type === "token") {
+        firstAt ||= performance.now();
+        live.push(ev.text);
+        scrollDown();
+      } else if (ev.type === "dropped") {
+        dropped = ev.count;
+        live.row.before(droppedNote(dropped));
+      } else if (ev.type === "done") { done = ev; doneAt = performance.now(); }
+      else if (ev.type === "error") throw new Error(ev.message);
     }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let cut;
-      while ((cut = buffer.indexOf("\n\n")) >= 0) {
-        const line = buffer.slice(0, cut); buffer = buffer.slice(cut + 2);
-        if (!line.startsWith("data: ")) continue;
-        const ev = JSON.parse(line.slice(6));
-        if (ev.type === "token") {
-          if (!started) { started = true; body.classList.remove("thinking"); body.textContent = ""; }
-          body.textContent += ev.text; scrollDown();
-        } else if (ev.type === "dropped") addNote(`The ${ev.count} oldest messages no longer fit in Aupus's ~1,000-token memory and were left out.`);
-        else if (ev.type === "done") reply = ev.reply;
-      }
-    }
+    if (!done) throw new Error("the connection closed before the reply was finished");
   } catch (e) {
-    if (e.name === "AbortError") stopped = true;
-    else {
-      // Nothing was answered: take the question back so it can be edited and sent again.
-      failed = true;
-      row.remove(); userDiv.remove(); state.messages.pop();
-      addNote("Something went wrong: " + e.message, true);
-      $("input").value = text; autosize();
+    error = e;
+    if (e instanceof TypeError) {  // the network failed: the server was closed, most likely
+      error = new Error("can't reach Aupus. Is it still running in the terminal?");
+      connect();
     }
-  } finally {
-    body.classList.remove("thinking");
-    state.busy = false; state.controller = null;
   }
-  if (!failed) {
-    if (!started) body.textContent = "";
-    if (reply === null) reply = body.textContent.trim();
-    if (!reply) body.textContent = stopped ? "…" : "(no reply)";
-    if (stopped) addNote("Stopped");
-    actions.hidden = false;
-    state.messages.push({ role: "assistant", content: reply });
+  state.busy = false; state.controller = null;
+  const stopped = error?.name === "AbortError";
+  const content = done ? done.reply : live.text();
+  if (error && !content) {
+    undo();
+    if (!stopped) toast("Aupus couldn't reply: " + error.message, { error: true });
+  } else {
+    const usage = done?.usage;
+    const seconds = (doneAt - firstAt) / 1000;
+    state.messages.push({ role: "assistant", content, meta: {
+      model,
+      tokens: usage ? usage.completion_tokens : null,
+      tps: usage && usage.completion_tokens > 1 && seconds > 0 ? (usage.completion_tokens - 1) / seconds : null,
+      finish: stopped ? "stopped" : error ? "interrupted" : done.finish,
+      used: usage ? usage.prompt_tokens + usage.completion_tokens : null,
+      window: usage ? usage.context_length : null,
+      dropped,
+    } });
+    if (error && !stopped) toast("The reply was cut short: " + error.message, { error: true });
+    announce(stopped ? "Stopped." : "Aupus replied: " + content);
   }
-  if (state.messages.length === 0) setChatting(false);
-  updateButtons(); persist(); $("input").focus();
+  renderAll(); persist();
+  if (!$("drawer").classList.contains("open")) $("input").focus();
+}
+function ask(text, undo) {
+  state.messages.push({ role: "user", content: text });
+  return generate(undo || (() => {
+    state.messages.pop();  // nothing was answered: take the question back, to edit and send again
+    if (!$("input").value.trim()) { $("input").value = text; autosize(); }
+  }));
+}
+function regenerate() {
+  const last = state.messages.at(-1);
+  if (state.busy || state.switching || state.online !== true || last?.role !== "assistant") return;
+  cancelEdit();
+  state.messages.pop();
+  generate(() => state.messages.push(last));  // if it fails, the old reply stays
+}
+// Editing the last question: it goes back in the box, and sending it replaces that exchange.
+function startEdit(text) {
+  const i = lastIndex("user");
+  if (i < 0 || state.busy) return;
+  state.editing ||= { draft: $("input").value };
+  const input = $("input");
+  input.value = text ?? state.messages[i].content;
+  renderAll(); autosize();
+  input.focus(); input.setSelectionRange(input.value.length, input.value.length);
+}
+function cancelEdit() {
+  if (!state.editing) return;
+  $("input").value = state.editing.draft;
+  state.editing = null;
+  renderAll(); autosize();
 }
 
 // ---------------------------------------------------------------- composer and buttons
@@ -398,97 +718,154 @@ function autosize() { const t = $("input"); t.style.height = "auto"; t.style.hei
 $("input").addEventListener("input", autosize);
 $("input").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("composer").requestSubmit(); }
+  else if (e.key === "ArrowUp" && !$("input").value && !state.editing && !state.busy && state.messages.length) { e.preventDefault(); startEdit(); }
 });
 $("composer").addEventListener("submit", (e) => {
   e.preventDefault();
   if (state.busy) { state.controller?.abort(); return; }
-  if (state.switching) return;
   const text = $("input").value.trim();
-  if (!text) return;
-  $("input").value = ""; autosize();
-  send(text);
+  if (state.switching || state.online !== true || !text) return;
+  $("input").value = "";
+  if (state.editing) {
+    const before = state.messages.slice();
+    state.messages.length = lastIndex("user");
+    state.editing = null;
+    autosize();
+    ask(text, () => { state.messages = before; startEdit(text); });  // if it fails: as it was, still editing
+  } else { autosize(); ask(text); }
 });
-$("newBtn").addEventListener("click", () => { state.messages = []; renderAll(); persist(); $("input").focus(); });
+$("cancelEditBtn").addEventListener("click", () => { cancelEdit(); $("input").focus(); });
+$("newBtn").addEventListener("click", () => {
+  const before = state.messages;
+  state.messages = []; state.editing = null; follow = true;
+  renderAll(); persist(); $("input").focus();
+  toast("Chat cleared", { action: "Undo", run: () => {
+    if (state.busy || state.messages.length) return;  // a new chat has started since
+    state.messages = before; renderAll(); persist(); scrollDown(true);
+  } });
+});
 $("saveBtn").addEventListener("click", async () => {
   try {
     const res = await fetch("/api/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: conversation() }) });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    addNote("Saved to " + data.path + ". Correct the replies by hand before training on it.");
-  } catch (e) { addNote("Couldn't save: " + e.message, true); }
+    const data = await res.json().catch(() => ({ error: res.statusText }));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    toast(`Saved to ${data.path}. Correct the replies by hand before training on it.`, { ms: 8000 });
+  } catch (e) { toast("Couldn't save: " + (e instanceof TypeError ? "can't reach Aupus" : e.message), { error: true }); }
 });
 for (const text of SUGGESTIONS) {
-  const chip = document.createElement("button");
-  chip.type = "button"; chip.className = "chip"; chip.textContent = text;
-  chip.addEventListener("click", () => { if (!state.busy && !state.switching) send(text); });
+  const chip = button("chip", null, text, () => { if (!state.busy && !state.switching && state.online === true) ask(text); });
+  chip.disabled = true;  // until the server answers
   $("chips").appendChild(chip);
 }
 
 // ---------------------------------------------------------------- settings drawer
 function drawer(open) {
+  if (open === $("drawer").classList.contains("open")) return;
   $("drawer").classList.toggle("open", open); $("scrim").classList.toggle("open", open);
-  $("drawer").setAttribute("aria-hidden", String(!open)); $("settingsBtn").setAttribute("aria-expanded", String(open));
-  if (open) $("temperature").focus();
+  $("drawer").inert = !open; $("app").inert = open;  // only the open panel can be reached, by Tab or a screen reader
+  $("settingsBtn").setAttribute("aria-expanded", String(open));
+  (open ? $("closeBtn") : $("settingsBtn")).focus();
 }
-$("settingsBtn").addEventListener("click", () => drawer(!$("drawer").classList.contains("open")));
+$("settingsBtn").addEventListener("click", () => drawer(true));
 $("closeBtn").addEventListener("click", () => drawer(false));
 $("scrim").addEventListener("click", () => drawer(false));
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") drawer(false); });
-function setSliders(values) { for (const k of SLIDERS) { $(k).value = values[k]; $(k + "Val").textContent = $(k).value; } }
-for (const k of SLIDERS) $(k).addEventListener("input", () => { $(k + "Val").textContent = $(k).value; persist(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.isComposing) return;
+  if ($("drawer").classList.contains("open")) drawer(false);
+  else if (state.busy) state.controller?.abort();
+  else if (state.editing) cancelEdit();
+});
+const shown = (k, v) => (k === "top_k" && Number(v) === 0 ? "off" : v);
+function setSliders(values) { for (const k of SLIDERS) { $(k).value = values[k]; $(k + "Val").textContent = shown(k, $(k).value); } }
+for (const k of SLIDERS) $(k).addEventListener("input", () => { $(k + "Val").textContent = shown(k, $(k).value); persist(); updateMeter(); });
 $("system").addEventListener("change", persist);
-$("resetBtn").addEventListener("click", () => { setSliders(state.info.defaults); $("system").value = ""; persist(); });
+$("resetBtn").addEventListener("click", () => { setSliders(state.info.defaults); $("system").value = ""; persist(); updateMeter(); });
 
-// ---------------------------------------------------------------- model picker
+// ---------------------------------------------------------------- the model, and the connection to the server
 function modelLabel(m) { return m.label + (m.val_loss != null ? " · val " + m.val_loss.toFixed(3) : ""); }
-function renderInfo(i) {
-  $("modelSelect").replaceChildren(...i.models.map((m) => {
-    const option = document.createElement("option");
-    option.value = m.id; option.textContent = modelLabel(m);  // text only, like everything else
-    return option;
-  }));
+function renderBanner() {
+  const banner = $("banner");
+  if (state.online === false) {
+    banner.className = "banner offline";
+    banner.replaceChildren(el("span", "", "Can't reach Aupus. Start it again in the terminal (bash aupus.sh) and this page reconnects by itself."), button("", null, "Try now", connect));
+  } else if (state.info?.stage === "pretrain") {
+    banner.className = "banner";
+    banner.replaceChildren(el("span", "", "This is a Base model: it learned to continue web text, not to chat, so expect it to ramble."));
+  }
+  banner.hidden = state.online !== false && state.info?.stage !== "pretrain";
+}
+function renderInfo() {
+  const i = state.info;
+  const file = i.source.replaceAll("\\", "/");
+  $("modelSelect").replaceChildren(...i.models.map((m) => new Option(modelLabel(m), m.id)));  // Option takes text, not HTML
   $("modelSelect").value = i.model;
-  $("modelPick").title = "Which trained version of Aupus answers: " + i.source;
-  $("model").textContent = `${i.params_m}M · ${i.stage === "sft" ? "chat" : "base"} · ${i.device}`;
-  $("model").title = i.source;
-  $("banner").hidden = i.stage !== "pretrain";
-  $("banner").textContent = "This is a Base model: it learned to continue web text, not to chat, so expect it to ramble.";
-  updateButtons();
+  $("modelPick").title = "Which trained version of Aupus answers: " + file;
+  const kind = i.stage === "pretrain" ? "base" : "chat";
+  $("model").textContent = `${i.params_m}M · ${kind} · ${i.device}`;
+  $("model").title = file;
+  $("model").classList.remove("loading");
+  const facts = [
+    ["Size", `${i.params_m} million parameters`],
+    ["Memory", `${count(i.context_length)} tokens`],
+    ["Trained as", (kind === "chat" ? "Chat model" : "Base model") + (i.step != null ? `, ${count(i.step)} steps` : "")],
+    ["Runs on", i.device.startsWith("cuda") ? `GPU (${i.device})` : i.device === "cpu" ? "CPU" : i.device],
+    ["File", file],
+  ];
+  $("facts").replaceChildren(...facts.flatMap(([k, v]) => [el("dt", "", k), el("dd", "", v)]));
+  $("resetBtn").disabled = false;
+}
+let retry = 0, firstInfo = true;
+async function connect() {
+  clearTimeout(retry);
+  let info = null;
+  try {
+    const res = await fetch("/api/info");
+    if (res.ok) info = await res.json();
+  } catch {}
+  if (state.switching) return;  // the model picker is about to bring newer information
+  state.online = info !== null;
+  if (info) {
+    state.info = info;
+    renderInfo();
+    if (firstInfo) {  // the sliders: as they were left in this browser, else the server's defaults
+      firstInfo = false;
+      const saved = store.get("settings") || {};
+      setSliders(Object.fromEntries(SLIDERS.map((k) => [k, saved[k] ?? info.defaults[k]])));
+      $("system").value = typeof saved.system === "string" ? saved.system : "";
+    }
+  } else {
+    if (!state.info) $("modelSelect").replaceChildren(new Option("not connected"));
+    retry = setTimeout(connect, 3000);  // keep trying: it comes back when the server does
+  }
+  renderBanner(); updateMeter(); updateButtons();
 }
 $("modelSelect").addEventListener("change", async () => {
   const id = $("modelSelect").value;
   const chosen = state.info.models.find((m) => m.id === id);
-  state.switching = true; $("model").textContent = "loading…"; updateButtons();
+  state.switching = true; $("model").textContent = "loading…"; $("model").classList.add("loading"); updateButtons();
   try {
     const res = await fetch("/api/model", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: id }) });
     const data = await res.json().catch(() => ({ error: res.statusText }));
     if (!res.ok) throw new Error(data.error || res.statusText);
     state.info = data;
-    if (state.messages.length) addNote("Replies from here on come from " + modelLabel(chosen) + ".");
+    toast(`${chosen.label} answers from here on.`);
   } catch (e) {
-    state.switching = false;
-    renderInfo(state.info);  // back to the model that is still loaded
-    const text = "Couldn't switch the model: " + e.message;
-    if (state.messages.length) addNote(text, true);
-    else { $("banner").hidden = false; $("banner").textContent = text; }
-    return;
-  } finally { state.switching = false; }
-  renderInfo(state.info); $("input").focus();
+    toast("Couldn't switch the model: " + (e instanceof TypeError ? "can't reach Aupus" : e.message), { error: true });
+    if (e instanceof TypeError) setTimeout(connect);
+  }
+  state.switching = false;
+  renderInfo(); renderBanner(); updateButtons();  // on failure: back to the model that is still loaded
+  $("input").focus();
 });
 
 // ---------------------------------------------------------------- start
-(async function init() {
-  setChatting(false);
-  try {
-    state.info = await (await fetch("/api/info")).json();
-  } catch { $("modelSelect").replaceChildren(new Option("server not reachable")); return; }
-  const i = state.info;
-  renderInfo(i);
-  const saved = store.get("settings") || {};
-  setSliders(Object.fromEntries(SLIDERS.map((k) => [k, saved[k] ?? i.defaults[k]])));
-  $("system").value = saved.system || "";
-  state.messages = Array.isArray(store.get("messages")) ? store.get("messages") : [];
-  renderAll(); $("input").focus();
+(function init() {
+  const saved = store.get("messages");
+  const valid = (m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string";
+  state.messages = Array.isArray(saved) && saved.every(valid) ? saved : [];
+  renderAll();
+  $("input").focus();
+  connect();
 })();
 </script>
 </body>

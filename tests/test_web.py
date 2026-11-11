@@ -92,6 +92,31 @@ def test_reply_events_match_greedy_generation(loaded):
     assert events[-1]["reply"] == tok.decode(ids, skip_special=True).strip()
 
 
+def test_done_event_says_why_the_reply_ended_and_counts_its_tokens(loaded, monkeypatch):
+    """The page shows a reply that ran out of room as possibly cut off, and how full the memory is."""
+    tok = loaded.tokenizer
+    messages = [{"role": "user", "content": "The cat"}]
+    word = tok.encode(" sat")
+
+    def reply_with(ids):
+        def fake_stream(*args, **kwargs):
+            yield from ids
+
+        monkeypatch.setattr(web, "stream", fake_stream)
+        return list(web.reply_events(loaded, messages, web.parse_settings(GREEDY)))[-1]
+
+    prompt = len(prompt_ids(tok, messages))
+    ended = reply_with([*word, tok.special_id(END)])
+    assert ended["reply"] == "sat" and ended["finish"] == "stop"
+    assert ended["usage"] == {
+        "prompt_tokens": prompt,
+        "completion_tokens": len(word) + 1,
+        "context_length": loaded.model.cfg.context_length,
+    }
+    cut = reply_with(word)  # the tokens ran out before the model ended its turn
+    assert cut["finish"] == "length" and cut["usage"]["completion_tokens"] == len(word)
+
+
 def test_reply_events_report_dropped_history_and_overlong_messages(loaded):
     long = "The cat and the dog " * 5
     messages = []
@@ -126,6 +151,10 @@ def test_saved_chat_is_valid_identity_format(tmp_path):
 def test_page_and_info(server):
     status, ctype, page = request(server, "GET", "/")
     assert status == 200 and ctype.startswith("text/html") and "<title>Aupus Chat</title>" in page
+    # What the model writes only ever reaches the page as text: no way to build HTML from a string.
+    assert not any(
+        sink in page for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write")
+    )
     status, _, info = request(server, "GET", "/api/info")
     info = json.loads(info)
     assert status == 200 and info["stage"] == "pretrain" and info["context_length"] == 64
@@ -165,6 +194,25 @@ def test_chat_streams_the_same_reply_as_the_library(server, loaded):
     events = events_of(payload)
     expected = list(web.reply_events(loaded, messages, web.parse_settings(GREEDY)))
     assert events == expected
+
+
+def test_an_error_part_way_is_reported_to_the_page(server, monkeypatch, capsys):
+    """Once the stream has started there is no status code left to send: the page gets an ``error`` event."""
+
+    def broken(*args, **kwargs):
+        yield {"type": "token", "text": "Half a"}
+        raise RuntimeError("out of memory")
+
+    msg = {"messages": [{"role": "user", "content": "The cat"}], "settings": GREEDY}
+    monkeypatch.setattr(web, "reply_events", broken)
+    status, _, payload = request(server, "POST", "/api/chat", msg)
+    events = events_of(payload)
+    assert status == 200 and events[0] == {"type": "token", "text": "Half a"}
+    assert events[-1]["type"] == "error" and "out of memory" in events[-1]["message"]
+    assert "out of memory" in capsys.readouterr().err  # and the terminal shows it too
+    monkeypatch.undo()
+    status, _, payload = request(server, "POST", "/api/chat", msg)  # the server carries on
+    assert status == 200 and events_of(payload)[-1]["type"] == "done"
 
 
 def test_chat_rejects_bad_requests(server):

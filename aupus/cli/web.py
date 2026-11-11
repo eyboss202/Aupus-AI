@@ -14,7 +14,11 @@ keeping with the project's minimal dependencies) and one static HTML page
 
 * ``GET /``: the page; ``GET /logo.svg``: the Aupus owl (tab icon); ``GET /fonts/<file>.woff2``:
   the page's typefaces, Newsreader and Instrument Sans (bundled, so it works offline);
-  ``GET /api/info``: the model and the default settings;
+  ``GET /api/info``: the model, the models the page can switch to, and the default settings;
+* ``POST /api/model``: ``{"model": "<id>"}`` -> loads that model in place of the current one
+  (the page's model picker) and answers like ``/api/info``. The choices are the chat models
+  found under ``release/`` and ``runs/`` when the server starts (``find_models``), plus the
+  ``--model`` it started with; the page can only pick from that list, never send a path;
 * ``POST /api/chat``: ``{"messages": [...], "settings": {...}}`` -> a stream of
   server-sent events: ``token`` (a piece of text), ``dropped`` (how many old
   messages no longer fit), ``done`` (the full reply) or ``error``;
@@ -24,7 +28,8 @@ keeping with the project's minimal dependencies) and one static HTML page
 
 The page keeps the conversation; the server is stateless apart from the model. One
 GPU generates one reply at a time, so a second request while a reply is being
-written gets HTTP 409. Closing the request (the page's Stop button) stops generation.
+written (or a model is loading) gets HTTP 409. Closing the request (the page's Stop
+button) stops generation. Only one model is kept in memory: switching frees the old one.
 
 **Security.** It listens on 127.0.0.1 only by default. Requests whose ``Host``
 or ``Origin`` header names another site are refused, so a web page open in the
@@ -38,10 +43,14 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import gc
 import json
 import math
+import socket
+import sys
 import threading
 from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -54,7 +63,7 @@ from aupus.cli.chat import fit_history
 from aupus.cli.generate import add_model_args, open_model
 from aupus.cli.streaming import TextStream
 from aupus.model import stream
-from aupus.model.io import LoadedModel
+from aupus.model.io import INFO, WEIGHTS, LoadedModel, load_model
 from aupus.tokenizer import END, EOS
 from aupus.tokenizer.chat import ChatFormatError, Message, validate
 
@@ -179,17 +188,155 @@ def save_conversation(messages: list[Message], save_dir: Path) -> Path:
     return path
 
 
+# ---------------------------------------------------------------- the model picker
+
+
+@dataclass(frozen=True)
+class ModelChoice:
+    """A model the page can switch to. ``id`` is what the page sends back; only known ids load."""
+
+    id: str
+    path: Path
+    label: str
+    step: int | None = None
+    val_loss: float | None = None
+
+    def public(self) -> dict[str, Any]:
+        return {"id": self.id, "label": self.label, "step": self.step, "val_loss": self.val_loss}
+
+
+def _label(path: Path, info: dict[str, Any]) -> str:
+    """``aupus-0.1-instruct · step 600 · release``, ``aupus-0.1-instruct · step 900``, ..."""
+    if path.is_dir():
+        parts = [path.name]
+        kind = "release"
+    else:
+        parts = [path.parent.name]
+        kind = "best" if path.name == "best.pt" else ""
+    if info.get("step") is not None:
+        parts.append(f"step {info['step']}")
+    if kind:
+        parts.append(kind)
+    if info.get("stage", "pretrain") == "pretrain":
+        parts.append("base")
+    return " · ".join(parts)
+
+
+def _choice_id(path: Path, root: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return path.resolve().as_posix()
+
+
+def _checkpoint_meta(path: Path) -> dict[str, Any] | None:
+    # mmap: only the small header is read, not the weights and optimizer state (~0.1 s per file).
+    try:
+        state = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
+    except Exception:  # noqa: BLE001 (half-written or not a checkpoint: leave it out of the list)
+        return None
+    if not isinstance(state, dict) or "model" not in state:
+        return None
+    return {
+        "stage": state.get("stage", "pretrain"),
+        "step": state.get("step"),
+        "best_val_loss": state.get("best_val_loss"),
+    }
+
+
+def _val_losses(run_dir: Path) -> dict[int, float]:
+    """``{step: val loss}`` from a run's ``metrics.jsonl`` (a step checkpoint doesn't record its own)."""
+    out: dict[int, float] = {}
+    try:
+        lines = (run_dir / "metrics.jsonl").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict) and isinstance(record.get("step"), int) and "val/loss" in record:
+            out[record["step"]] = float(record["val/loss"])
+    return out
+
+
+def find_models(root: Path) -> list[ModelChoice]:
+    """The chat (fine-tuned) models under ``root/release`` and ``root/runs``, for the model picker.
+
+    Base models are left out: they continue text, they don't chat. A checkpoint that was exported
+    as a release (same file, same step) is listed once, as the release; so is a step that has both
+    ``best.pt`` and ``step_NNNNNN.pt``. Releases come first, then each run's checkpoints by step.
+    """
+    root = Path(root)
+    choices: list[ModelChoice] = []
+    released: set[tuple[Path, Any]] = set()  # (checkpoint, step) of every release
+    for info_file in sorted(root.glob(f"release/*/{INFO}")):
+        try:
+            info = json.loads(info_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        path = info_file.parent
+        if not isinstance(info, dict) or info.get("stage", "pretrain") == "pretrain":
+            continue
+        if not (path / WEIGHTS).exists():
+            continue
+        if info.get("source_checkpoint"):
+            released.add(((root / info["source_checkpoint"]).resolve(), info.get("step")))
+        choices.append(
+            ModelChoice(
+                _choice_id(path, root), path, _label(path, info), info.get("step"), info.get("best_val_loss")
+            )
+        )
+    runs = root / "runs"
+    run_dirs = sorted(p for p in runs.iterdir() if p.is_dir()) if runs.is_dir() else []
+    for run_dir in run_dirs:
+        val = _val_losses(run_dir)
+        best = run_dir / "best.pt"
+        seen_steps: set[Any] = set()
+        for path in ([best] if best.is_file() else []) + sorted(run_dir.glob("step_*.pt")):
+            meta = _checkpoint_meta(path)
+            if meta is None or meta["stage"] == "pretrain":
+                continue
+            step = meta["step"]
+            duplicate = step in seen_steps or (path.resolve(), step) in released
+            seen_steps.add(step)
+            if duplicate:
+                continue
+            loss = val.get(step, meta["best_val_loss"] if path == best else None)
+            choices.append(ModelChoice(_choice_id(path, root), path, _label(path, meta), step, loss))
+    return choices
+
+
 class ChatServer(ThreadingHTTPServer):
-    """Holds the model; one reply is generated at a time (``generating``)."""
+    """Holds the model; one reply is generated (or one model loaded) at a time (``generating``)."""
 
     daemon_threads = True
+    # On Windows, SO_REUSEADDR (http.server's default) lets a second server bind a port that is
+    # already listening, and requests then go to either one. Ask for the port exclusively instead,
+    # so a second chat_web on the same port fails at start. Elsewhere SO_REUSEADDR only allows
+    # reusing a port in TIME_WAIT (a quick restart) and is kept.
+    allow_reuse_address = sys.platform != "win32"
+
+    def server_bind(self) -> None:
+        if sys.platform == "win32":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     def __init__(
-        self, address: tuple[str, int], loaded: LoadedModel, save_dir: Path, seed: int | None = None
+        self,
+        address: tuple[str, int],
+        loaded: LoadedModel,
+        save_dir: Path,
+        seed: int | None = None,
+        models: Sequence[ModelChoice] = (),
     ) -> None:
         super().__init__(address, ChatHandler)
         self.loaded, self.save_dir, self.seed = loaded, save_dir, seed
         self.generating = threading.Lock()
+        self.switching = False  # a model is loading (it holds ``generating``)
+        self.models = {m.id: m for m in models}
+        self.model_id = self._current_choice(loaded)
         files = resources.files("aupus.cli")
         self.page = files.joinpath("chat_web.html").read_bytes()
         self.logo = files.joinpath("logo.svg").read_bytes()  # a copy of docs/assets/logo.svg
@@ -197,6 +344,56 @@ class ChatServer(ThreadingHTTPServer):
         # only: nothing from the request path ever reaches the filesystem.
         fonts = files.joinpath("fonts")
         self.fonts = {f.name: f.read_bytes() for f in fonts.iterdir() if f.name.endswith(".woff2")}
+
+    def _current_choice(self, loaded: LoadedModel) -> str:
+        """The id of the loaded model, adding it to the list first when it isn't there (e.g. a base model)."""
+        source = loaded.source.resolve()
+        for choice in self.models.values():
+            if choice.path.resolve() == source:
+                return choice.id
+        info = loaded.info
+        current = ModelChoice(
+            loaded.source.as_posix(),
+            loaded.source,
+            _label(loaded.source, info),
+            info.get("step"),
+            info.get("best_val_loss"),
+        )
+        self.models = {current.id: current, **self.models}
+        return current.id
+
+    def info(self) -> dict[str, Any]:
+        loaded = self.loaded
+        return {
+            "source": str(loaded.source),
+            "params_m": round(loaded.model.num_params() / 1e6, 1),
+            "context_length": loaded.model.cfg.context_length,
+            "device": str(next(loaded.model.parameters()).device),
+            "stage": loaded.info.get("stage", "pretrain"),
+            "step": loaded.info.get("step"),
+            "model": self.model_id,
+            "models": [m.public() for m in self.models.values()],
+            "defaults": DEFAULTS,
+            "limits": LIMITS,
+        }
+
+    def switch_model(self, model_id: Any) -> None:
+        """Load another of ``self.models`` in place of the current one. Call it holding ``generating``.
+
+        The new model goes on the same device. If it can't be loaded the error propagates and the
+        current model stays; otherwise the old one is freed (only one is ever kept).
+        """
+        choice = self.models.get(model_id) if isinstance(model_id, str) else None
+        if choice is None:
+            raise RequestError("unknown model: pick one from the list")
+        if choice.id == self.model_id:
+            return
+        device = next(self.loaded.model.parameters()).device
+        new = load_model(choice.path, device=device)
+        self.loaded, self.model_id = new, choice.id
+        gc.collect()
+        if device.type == "cuda":
+            torch.cuda.empty_cache()  # give the old model's memory back to the GPU
 
     @property
     def port(self) -> int:
@@ -268,20 +465,7 @@ class ChatHandler(BaseHTTPRequestHandler):
         if path.startswith("/fonts/") and path[len("/fonts/") :] in self.server.fonts:
             return self._send(HTTPStatus.OK, self.server.fonts[path[len("/fonts/") :]], "font/woff2")
         if path == "/api/info":
-            loaded = self.server.loaded
-            return self._json(
-                HTTPStatus.OK,
-                {
-                    "source": str(loaded.source),
-                    "params_m": round(loaded.model.num_params() / 1e6, 1),
-                    "context_length": loaded.model.cfg.context_length,
-                    "device": str(next(loaded.model.parameters()).device),
-                    "stage": loaded.info.get("stage", "pretrain"),
-                    "step": loaded.info.get("step"),
-                    "defaults": DEFAULTS,
-                    "limits": LIMITS,
-                },
-            )
+            return self._json(HTTPStatus.OK, self.server.info())
         return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_POST(self) -> None:
@@ -293,6 +477,8 @@ class ChatHandler(BaseHTTPRequestHandler):
                 return self._chat()
             if path == "/api/save":
                 return self._save()
+            if path == "/api/model":
+                return self._switch()
         except RequestError as e:
             return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
         return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
@@ -302,12 +488,34 @@ class ChatHandler(BaseHTTPRequestHandler):
         path = save_conversation(messages, self.server.save_dir)
         self._json(HTTPStatus.OK, {"path": path.as_posix()})
 
+    def _busy(self) -> None:
+        busy = "a model is loading" if self.server.switching else "another reply is still being written"
+        self._json(HTTPStatus.CONFLICT, {"error": busy})
+
+    def _switch(self) -> None:
+        model_id = self._read_json().get("model")
+        if model_id not in self.server.models:
+            raise RequestError("unknown model: pick one from the list")
+        if not self.server.generating.acquire(blocking=False):
+            return self._busy()
+        self.server.switching = True
+        try:
+            self.server.switch_model(model_id)
+        except RequestError:
+            raise
+        except Exception as e:  # noqa: BLE001 (a broken or missing file: report it, keep the current model)
+            return self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"couldn't load {model_id}: {e}"})
+        finally:
+            self.server.switching = False
+            self.server.generating.release()
+        self._json(HTTPStatus.OK, self.server.info())
+
     def _chat(self) -> None:
         body = self._read_json()
         messages = parse_messages(body.get("messages"), for_generation=True)
         settings = parse_settings(body.get("settings"))
         if not self.server.generating.acquire(blocking=False):
-            return self._json(HTTPStatus.CONFLICT, {"error": "another reply is still being written"})
+            return self._busy()
         try:
             events = reply_events(self.server.loaded, messages, settings, self.server.seed)
             self.send_response(HTTPStatus.OK)
@@ -338,10 +546,18 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     loaded = open_model(args)
-    server = ChatServer((args.host, args.port), loaded, args.save_dir, args.seed)
+    models = find_models(Path.cwd())
+    try:
+        server = ChatServer((args.host, args.port), loaded, args.save_dir, args.seed, models)
+    except OSError as e:
+        sys.exit(
+            f"error: can't listen on {args.host}:{args.port} ({e.strerror or e}). Is Aupus (or another "
+            f"program) already running there? Close it, or pick another port: --port {args.port + 1}"
+        )
     host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
     params = loaded.model.num_params() / 1e6
     print(f"Aupus | {loaded.source} | {params:.0f}M params | {next(loaded.model.parameters()).device}")
+    print(f"{len(server.models)} model(s) to pick from in the page (chat models in release/ and runs/)")
     if args.host not in LOOPBACK:
         print(f"warning: listening on {args.host}: anyone on your network can use it (no password)")
     print(f"open http://{host}:{server.port} in your browser (Ctrl-C to quit)", flush=True)

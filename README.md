@@ -287,7 +287,9 @@ config, the tokenizer, `release.json` (source checkpoint, step, val loss, SHA-25
 and the model card.
 
 The browser chat streams replies as they are written and has a Stop button, a "New chat"
-button and the sampling settings. Replies and the interface are set in Instrument Sans, the
+button and the sampling settings. A model picker at the top switches between the chat models it
+finds in `release/` and `runs/` (each release, and each fine-tuning checkpoint with its step and
+val loss; base models are left out), keeping the conversation. Replies and the interface are set in Instrument Sans, the
 headings in Newsreader (both under the SIL Open Font License, bundled in `aupus/cli/fonts/`, so the
 page also works offline), in a light or dark theme that follows your system. It runs on your computer only (it listens on 127.0.0.1 and
 refuses requests from other sites). "Save chat" writes the conversation to `data/chats/`

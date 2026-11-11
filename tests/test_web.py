@@ -8,11 +8,12 @@ import threading
 from pathlib import Path
 
 import pytest
+import torch
 
 from aupus.cli import web
 from aupus.data.sft import identity_conversations
 from aupus.model import generate
-from aupus.model.io import load_model
+from aupus.model.io import export_release, load_model
 from aupus.tokenizer import END, EOS
 from aupus.tokenizer.chat import prompt_ids
 
@@ -209,3 +210,127 @@ def test_save_endpoint(server):
     path = Path(json.loads(body)["path"])
     assert status == 200 and json.loads(path.read_text(encoding="utf-8"))["messages"] == convo
     assert request(server, "POST", "/api/save", {"messages": convo[:1]})[0] == 400
+
+
+# ---------------------------------------------------------------- model picker
+
+
+@pytest.fixture(scope="module")
+def project(tiny_run, tmp_path_factory):
+    """A project folder like the real one: a chat run (one checkpoint released) and a base run.
+
+    The tiny model is a base model; it is re-saved with ``stage: sft`` to stand in for a chat model.
+    """
+    root = tmp_path_factory.mktemp("project")
+    state = torch.load(tiny_run.checkpoint, map_location="cpu", weights_only=True)
+    chat = root / "runs" / "chat"
+    chat.mkdir(parents=True)
+    torch.save({**state, "stage": "sft", "step": 20, "best_val_loss": 3.5}, chat / "best.pt")
+    torch.save({**state, "stage": "sft", "step": 20}, chat / "step_000020.pt")  # the same step as best.pt
+    torch.save({**state, "stage": "sft", "step": 40}, chat / "step_000040.pt")
+    (chat / "metrics.jsonl").write_text(
+        '{"step": 20, "val/loss": 3.5}\nnot json\n{"step": 40, "val/loss": 3.25}\n'
+    )
+    (chat / "step_000060.pt").write_bytes(b"half-written")  # training was interrupted: skipped
+    base = root / "runs" / "base"
+    base.mkdir()
+    torch.save(state, base / "best.pt")  # a base model: it doesn't chat, so it isn't offered
+    export_release(chat / "best.pt", root / "release" / "chat-0.1")
+    export_release(base / "best.pt", root / "release" / "base-0.1")
+    return root
+
+
+def test_find_models_lists_chat_models_once(project):
+    models = web.find_models(project)
+    assert [m.id for m in models] == ["release/chat-0.1", "runs/chat/step_000040.pt"]
+    release, step40 = models
+    assert release.label == "chat-0.1 · step 20 · release" and release.val_loss == 3.5
+    assert step40.label == "chat · step 40" and step40.val_loss == 3.25  # from metrics.jsonl
+    assert web.find_models(project / "nothing-here") == []
+
+
+@pytest.fixture
+def picker(project, tmp_path):
+    models = web.find_models(project)
+    srv = web.ChatServer(("127.0.0.1", 0), load_model(models[0].path), tmp_path / "chats", 0, models)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    yield srv
+    srv.shutdown()
+    srv.server_close()
+
+
+def test_info_lists_the_models(picker):
+    info = json.loads(request(picker, "GET", "/api/info")[2])
+    assert info["model"] == "release/chat-0.1" and info["stage"] == "sft"
+    assert [m["id"] for m in info["models"]] == ["release/chat-0.1", "runs/chat/step_000040.pt"]
+    assert info["models"][1] == {
+        "id": "runs/chat/step_000040.pt",
+        "label": "chat · step 40",
+        "step": 40,
+        "val_loss": 3.25,
+    }
+
+
+def test_switching_models(picker):
+    status, _, body = request(picker, "POST", "/api/model", {"model": "runs/chat/step_000040.pt"})
+    info = json.loads(body)
+    assert status == 200 and info["model"] == "runs/chat/step_000040.pt" and info["step"] == 40
+    assert picker.loaded.info["step"] == 40 and not picker.loaded.model.training
+    msg = {"messages": [{"role": "user", "content": "The cat"}], "settings": GREEDY}
+    status, _, payload = request(picker, "POST", "/api/chat", msg)
+    assert status == 200 and events_of(payload)[-1]["type"] == "done"  # the new model answers
+    assert request(picker, "POST", "/api/model", {"model": "release/chat-0.1"})[0] == 200
+    assert picker.model_id == "release/chat-0.1"
+
+
+def test_only_listed_models_can_be_loaded(picker, project):
+    """The page picks from the list; it can't make the server open other files."""
+    for bad in ("runs/base/best.pt", str(project / "runs" / "base" / "best.pt"), "../x", 3, None):
+        status, _, body = request(picker, "POST", "/api/model", {"model": bad})
+        assert status == 400 and "unknown model" in body
+    assert picker.model_id == "release/chat-0.1"
+
+
+def test_no_switching_while_a_reply_is_written(picker):
+    picker.generating.acquire()
+    try:
+        status, _, body = request(picker, "POST", "/api/model", {"model": "runs/chat/step_000040.pt"})
+        assert status == 409 and "still being written" in body
+        picker.switching = True
+        status, _, body = request(
+            picker, "POST", "/api/chat", {"messages": [{"role": "user", "content": "x"}]}
+        )
+        assert status == 409 and "model is loading" in body
+    finally:
+        picker.switching = False
+        picker.generating.release()
+    assert picker.model_id == "release/chat-0.1"
+
+
+def test_a_broken_model_file_keeps_the_current_model(picker, project, tmp_path):
+    broken = tmp_path / "broken.pt"
+    broken.write_bytes(b"not a checkpoint")
+    picker.models["broken"] = web.ModelChoice("broken", broken, "broken")
+    status, _, body = request(picker, "POST", "/api/model", {"model": "broken"})
+    assert status == 500 and "couldn't load broken" in body
+    assert picker.model_id == "release/chat-0.1" and picker.loaded.info["step"] == 20
+
+
+def test_the_starting_model_is_always_offered(loaded, tmp_path):
+    """Started with a model the scan doesn't list (here a base model), it is still in the list, first."""
+    other = web.ModelChoice("release/x", tmp_path / "x", "x")
+    srv = web.ChatServer(("127.0.0.1", 0), loaded, tmp_path / "chats", 0, [other])
+    try:
+        assert list(srv.models) == [loaded.source.as_posix(), "release/x"]
+        assert srv.model_id == loaded.source.as_posix()
+        assert srv.models[srv.model_id].label.endswith("· best · base")
+    finally:
+        srv.server_close()
+
+
+def test_a_second_server_cannot_take_a_port_in_use(server, loaded, tmp_path):
+    """Two chat servers on one port would split the requests between them (Windows allowed it)."""
+    with pytest.raises(OSError):
+        web.ChatServer(("127.0.0.1", server.port), loaded, tmp_path / "chats").server_close()
+    assert request(server, "GET", "/api/info")[0] == 200  # the first one is unaffected

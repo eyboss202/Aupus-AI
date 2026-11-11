@@ -51,6 +51,18 @@
   .brand { display: flex; align-items: center; gap: 9px; font: 450 23px/1 var(--serif); letter-spacing: -.2px; margin-right: auto; padding-left: 4px; }
   .brand .mark { height: 30px; width: 22.4px; margin-top: -3px; }
   #model { font-size: 12.5px; color: var(--faint); margin-right: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  /* The model picker: a quiet pill until it's needed; the chevron follows the theme's text colour. */
+  .model-pick { position: relative; display: flex; flex: 0 1 auto; min-width: 0; color: var(--muted); margin-right: 4px; }
+  .model-pick::after { content: ""; position: absolute; right: 12px; top: 50%; width: 6px; height: 6px; pointer-events: none;
+    border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor; transform: translateY(-70%) rotate(45deg); }
+  .model-pick:hover:not(.disabled) { color: var(--text); }
+  .model-pick.disabled::after { opacity: .4; }
+  #modelSelect { appearance: none; -webkit-appearance: none; font: 500 13px/1.2 var(--sans); color: inherit; background: transparent;
+    border: 1px solid var(--border); border-radius: 9px; padding: 8px 30px 8px 12px; width: 100%; max-width: 360px; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  #modelSelect:hover:not(:disabled) { background: var(--hover); }
+  #modelSelect:disabled { cursor: default; opacity: .6; }
+  #modelSelect option { background: var(--surface); color: var(--text); }
   .icon-btn { width: 36px; height: 36px; border-radius: 9px; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; color: var(--muted); }
   .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--text); }
   .icon-btn:disabled { opacity: .3; cursor: default; }
@@ -118,7 +130,7 @@
   @keyframes breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
   @media (max-width: 600px) {
-    header { padding: 10px 10px; } #model { display: none; } .column { padding: 0 14px; } #log { padding: 14px 14px 24px; }
+    header { padding: 10px 10px; } #model { display: none; } .brand { flex: none; } .column { padding: 0 14px; } #log { padding: 14px 14px 24px; }
     #hero h1 { font-size: 33px; } #dock { padding: 6px 12px 10px; } .composer-row .hint { display: none; }
     .msg.assistant { grid-template-columns: 1fr; } .msg.assistant .mark { display: none; } .actions { grid-column: 1; }
   }
@@ -159,7 +171,10 @@
 
 <header>
   <div class="brand"><svg class="mark" aria-hidden="true"><use href="#owl"/></svg>aupus</div>
-  <div id="model">connecting…</div>
+  <div class="model-pick disabled" id="modelPick" title="Which trained version of Aupus answers">
+    <select id="modelSelect" aria-label="Model" disabled><option>connecting…</option></select>
+  </div>
+  <div id="model"></div>
   <button id="newBtn" class="icon-btn" type="button" title="New chat" aria-label="New chat"><svg class="icon"><use href="#i-new"/></svg></button>
   <button id="saveBtn" class="icon-btn" type="button" disabled title="Save this chat to data/chats/, to correct by hand and train on" aria-label="Save chat"><svg class="icon"><use href="#i-save"/></svg></button>
   <button id="settingsBtn" class="icon-btn" type="button" title="Settings" aria-label="Settings" aria-expanded="false"><svg class="icon"><use href="#i-sliders"/></svg></button>
@@ -211,7 +226,7 @@
 const $ = (id) => document.getElementById(id);
 const SLIDERS = ["temperature", "max_new_tokens", "top_p", "repetition_penalty"];
 const SUGGESTIONS = ["What is a prime number?", "Why is the sky blue?", "Give me three tips for learning to read.", "Explain the water cycle simply."];
-const state = { messages: [], busy: false, controller: null, info: null };
+const state = { messages: [], busy: false, switching: false, controller: null, info: null };
 
 const store = {  // per-browser convenience only; the page works without it
   get(key) { try { return JSON.parse(localStorage.getItem("aupus." + key)); } catch { return null; } },
@@ -301,7 +316,10 @@ function updateButtons() {
   $("sendBtn").replaceChildren(icon(state.busy ? "stop" : "send"));
   $("sendBtn").setAttribute("aria-label", state.busy ? "Stop" : "Send");
   $("sendBtn").title = state.busy ? "Stop" : "Send";
-  $("sendBtn").disabled = !state.busy && !$("input").value.trim();
+  $("sendBtn").disabled = state.switching || (!state.busy && !$("input").value.trim());
+  const lockPicker = state.busy || state.switching || !state.info || state.info.models.length < 2;
+  $("modelSelect").disabled = lockPicker;
+  $("modelPick").classList.toggle("disabled", lockPicker);
 }
 
 // ---------------------------------------------------------------- talking to the server
@@ -384,6 +402,7 @@ $("input").addEventListener("keydown", (e) => {
 $("composer").addEventListener("submit", (e) => {
   e.preventDefault();
   if (state.busy) { state.controller?.abort(); return; }
+  if (state.switching) return;
   const text = $("input").value.trim();
   if (!text) return;
   $("input").value = ""; autosize();
@@ -401,7 +420,7 @@ $("saveBtn").addEventListener("click", async () => {
 for (const text of SUGGESTIONS) {
   const chip = document.createElement("button");
   chip.type = "button"; chip.className = "chip"; chip.textContent = text;
-  chip.addEventListener("click", () => { if (!state.busy) send(text); });
+  chip.addEventListener("click", () => { if (!state.busy && !state.switching) send(text); });
   $("chips").appendChild(chip);
 }
 
@@ -420,19 +439,51 @@ for (const k of SLIDERS) $(k).addEventListener("input", () => { $(k + "Val").tex
 $("system").addEventListener("change", persist);
 $("resetBtn").addEventListener("click", () => { setSliders(state.info.defaults); $("system").value = ""; persist(); });
 
+// ---------------------------------------------------------------- model picker
+function modelLabel(m) { return m.label + (m.val_loss != null ? " · val " + m.val_loss.toFixed(3) : ""); }
+function renderInfo(i) {
+  $("modelSelect").replaceChildren(...i.models.map((m) => {
+    const option = document.createElement("option");
+    option.value = m.id; option.textContent = modelLabel(m);  // text only, like everything else
+    return option;
+  }));
+  $("modelSelect").value = i.model;
+  $("modelPick").title = "Which trained version of Aupus answers: " + i.source;
+  $("model").textContent = `${i.params_m}M · ${i.stage === "sft" ? "chat" : "base"} · ${i.device}`;
+  $("model").title = i.source;
+  $("banner").hidden = i.stage !== "pretrain";
+  $("banner").textContent = "This is a Base model: it learned to continue web text, not to chat, so expect it to ramble.";
+  updateButtons();
+}
+$("modelSelect").addEventListener("change", async () => {
+  const id = $("modelSelect").value;
+  const chosen = state.info.models.find((m) => m.id === id);
+  state.switching = true; $("model").textContent = "loading…"; updateButtons();
+  try {
+    const res = await fetch("/api/model", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: id }) });
+    const data = await res.json().catch(() => ({ error: res.statusText }));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    state.info = data;
+    if (state.messages.length) addNote("Replies from here on come from " + modelLabel(chosen) + ".");
+  } catch (e) {
+    state.switching = false;
+    renderInfo(state.info);  // back to the model that is still loaded
+    const text = "Couldn't switch the model: " + e.message;
+    if (state.messages.length) addNote(text, true);
+    else { $("banner").hidden = false; $("banner").textContent = text; }
+    return;
+  } finally { state.switching = false; }
+  renderInfo(state.info); $("input").focus();
+});
+
 // ---------------------------------------------------------------- start
 (async function init() {
   setChatting(false);
   try {
     state.info = await (await fetch("/api/info")).json();
-  } catch { $("model").textContent = "server not reachable"; return; }
+  } catch { $("modelSelect").replaceChildren(new Option("server not reachable")); return; }
   const i = state.info;
-  $("model").textContent = `${i.params_m}M · ${i.stage === "sft" ? "chat" : "base"} model${i.step != null ? " · step " + i.step : ""} · ${i.device}`;
-  $("model").title = i.source;
-  if (i.stage === "pretrain") {
-    $("banner").hidden = false;
-    $("banner").textContent = "This is a Base model: it learned to continue web text, not to chat, so expect it to ramble.";
-  }
+  renderInfo(i);
   const saved = store.get("settings") || {};
   setSliders(Object.fromEntries(SLIDERS.map((k) => [k, saved[k] ?? i.defaults[k]])));
   $("system").value = saved.system || "";

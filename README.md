@@ -276,7 +276,7 @@ python scripts/sft.py --resume runs/aupus-0.1-instruct
 
 ```bash
 python scripts/chat_web.py --model release/aupus-0.1-instruct            # chat in the browser: http://127.0.0.1:8000
-python scripts/chat.py --model runs/aupus-0.1-instruct/best.pt           # chat in the terminal: /reset, /exit; Ctrl-C stops a reply
+python scripts/chat.py --model runs/aupus-0.1-instruct/best.pt           # chat in the terminal: /help lists the commands; Ctrl-C stops a reply
 python scripts/generate.py --model runs/tiny/best.pt --prompt "The water cycle is"
 python scripts/export_release.py --checkpoint runs/aupus-0.1-instruct/best.pt --out release/aupus-0.1-instruct
 python scripts/chat.py --model release/aupus-0.1-instruct                # releases load the same way
@@ -299,6 +299,13 @@ refuses requests from other sites). "Save chat" writes the conversation to `data
 (never committed) in the format of the fine-tuning data, so you can correct the replies by
 hand and train on them. Chatting never changes the model by itself.
 
+The terminal chat has the same look in text: Aupus blue and the owl in a welcome panel, a ruled
+input line with a status line under it (commands, and a bar for how much of the memory the chat
+fills), and replies that stream in word-wrapped, with their length and speed underneath. `/new`
+starts over, `/retry` writes the last reply again, `/save` saves the chat like the browser's "Save
+chat", `/info` describes the model and `/exit` quits. Piped or redirected it writes plain text;
+`NO_COLOR=1` turns the colours off and `AUPUS_THEME=light` suits a light terminal background.
+
 ## Repository layout
 
 ```
@@ -309,7 +316,7 @@ aupus/          the Python package
   model/        config + size/FLOP accounting, layers, transformer, KV-cache generation
   train/        pretraining loop, SFT, AdamW + LR schedule, checkpoints
   eval/         perplexity, bits per byte, HellaSwag / ARC-Easy / PIQA
-  cli/          generate / chat in the terminal, chat in the browser (web.py + chat_web.html)
+  cli/          generate / chat in the terminal (chat.py + term.py), chat in the browser (web.py + chat_web.html)
 configs/model/  model presets: debug (~6.5M), tiny (~34M), small (~125M), base (~348M)
 configs/data/   data-pipeline settings (filters, dedup, split, shard size)
 configs/train/  pretraining-run configs: tiny (M6 check), small (Aupus 0.1 Base, M8), small-runpod (the same run on a 24 GB GPU)

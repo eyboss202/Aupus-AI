@@ -15,6 +15,7 @@ import torch
 from aupus.cli import chat as chat_cli
 from aupus.cli import generate as generate_cli
 from aupus.cli.streaming import TextStream
+from aupus.cli.term import ReplyWriter, Term, cell_width, clip, wrap
 from aupus.model import ModelConfig, Transformer, generate
 from aupus.model.generate import apply_repetition_penalty
 from aupus.model.io import export_release, load_model
@@ -231,3 +232,66 @@ def test_chat_reports_a_message_that_cannot_fit(tiny_run):
     history = chat_cli.chat_loop(loaded, chat_args(), scripted(["The cat " * 100, "The dog"]), out)
     assert "too long" in out.getvalue()
     assert [m["content"] for m in history if m["role"] == "user"] == ["The dog"]
+
+
+def test_chat_retry_and_save(tiny_run, tmp_path):
+    loaded = load_model(tiny_run.checkpoint)
+    out = io.StringIO()
+    inputs = ["/retry", "/save", "The cat", "/retry", "/save"]
+    history = chat_cli.chat_loop(loaded, chat_args(save_dir=tmp_path), scripted(inputs), out)
+    text = out.getvalue()
+    assert "Nothing to retry yet" in text and "Nothing to save yet" in text
+    assert [m["role"] for m in history] == ["user", "assistant"]  # /retry replaced the reply
+    (saved,) = tmp_path.glob("chat-*.jsonl")
+    assert json.loads(saved.read_text(encoding="utf-8"))["messages"] == history
+
+
+# ---------------------------------------------------------------- terminal look
+
+
+def test_plain_output_has_no_escape_codes(tiny_run):
+    out = io.StringIO()
+    chat_cli.chat_loop(load_model(tiny_run.checkpoint), chat_args(), scripted(["The cat", "/help"]), out)
+    assert "\x1b" not in out.getvalue()
+
+
+def test_styled_chat_draws_the_welcome_panel_and_replies(tiny_run):
+    out = io.StringIO()
+    term = Term(out, fancy=True, color=True, unicode=True, light=False)
+    inputs = ["The cat", "/help", "/info", "/new", "/exit"]
+    history = chat_cli.chat_loop(load_model(tiny_run.checkpoint), chat_args(), scripted(inputs), out, term)
+    text = out.getvalue()
+    assert "What shall we learn today?" in text and "╭" in text and "▜▄" in text  # panel and owl
+    assert "\x1b[38;" in text  # Aupus blue
+    assert "●" in text and "tokens" in text  # a reply and its meta line
+    assert "/retry" in text and "Trained as" in text and "New chat" in text
+    assert history == []
+
+
+def test_term_helpers():
+    assert cell_width("abc") == 3 and cell_width("日本") == 4 and cell_width("é") == 1
+    assert cell_width("\x1b[1mhi\x1b[0m") == 2  # colour codes take no room
+    assert clip("Explain the water cycle", 12) == "Explain the…"
+    assert clip("short", 12) == "short"
+    assert wrap("one two three\n\nfour", 8) == ["one two", "three", "", "four"]
+    plain = Term(io.StringIO())
+    assert not plain.fancy and plain.paint("x", "brand", bold=True) == "x"
+    assert Term(io.StringIO(), fancy=True, color=True).paint("x", "brand").startswith("\x1b[")
+
+
+def write_reply(pieces, width, fancy=True):
+    out = io.StringIO()
+    writer = ReplyWriter(Term(out, fancy=fancy, color=False, unicode=True), width)
+    for piece in pieces:
+        writer.push(piece)
+    return writer.finish(), out.getvalue()
+
+
+def test_reply_writer_tidies_space_and_wraps_under_an_indent():
+    wrote, text = write_reply(["\n  Hello", " world", "\n\n\n\n", "foo  ", "\n\n"], width=40)
+    assert wrote and text == "● Hello world\n\n  foo\n"  # no leading space, one blank line, no trailing ones
+    _, text = write_reply(["aaaa bbbb cccc"], width=12)
+    assert text == "● aaaa bbbb\n  cccc\n"
+    _, text = write_reply(["aaaa bb", "bbbb"], width=10)  # "bbbbbb" reaches the edge part-way
+    assert text == "● aaaa bbb\x1b[3D\x1b[K\n  bbbbbb\n"  # the cursor goes back and the word moves down
+    assert write_reply(["  ", "\n"], width=10) == (False, "")

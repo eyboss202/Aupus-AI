@@ -15,7 +15,7 @@ import torch
 from aupus.cli import chat as chat_cli
 from aupus.cli import generate as generate_cli
 from aupus.cli.streaming import TextStream
-from aupus.cli.term import ReplyWriter, Term, cell_width, clip, wrap
+from aupus.cli.term import ANSI, ReplyWriter, Term, cell_width, clip, wrap
 from aupus.model import ModelConfig, Transformer, generate
 from aupus.model.generate import apply_repetition_penalty
 from aupus.model.io import export_release, load_model
@@ -246,6 +246,60 @@ def test_chat_retry_and_save(tiny_run, tmp_path):
     assert json.loads(saved.read_text(encoding="utf-8"))["messages"] == history
 
 
+def test_chat_settings_change_the_next_replies(tiny_run):
+    loaded = load_model(tiny_run.checkpoint)  # context window 64: a reply gets at most 32 tokens
+    out = io.StringIO()
+    args = chat_args()
+    inputs = ["/settings", "/settings reply length 3", "/settings TEMP 0,5", "/settings temperature 0"]
+    inputs += [
+        "/settings top-k 1.5",
+        "/settings length 33",
+        "/settings volume 3",
+        "/settings top_p",
+        "The cat",
+    ]
+    history = chat_cli.chat_loop(loaded, args, scripted(inputs), out)
+    text = out.getvalue()
+    assert "Repetition penalty" in text and "1 to 32" in text  # the table, with each setting's range
+    assert "Reply length is now 3 (it was 8)" in text and "Temperature is now 0.5 (it was 0)" in text
+    assert "Top-k is a whole number" in text and "Reply length goes from 1 to 32" in text
+    assert "no setting called 'volume'" in text and "Top-p is 1 (it goes from 0.05 to 1)" in text
+    assert (args.max_new_tokens, args.temperature, args.top_k) == (3, 0.0, 0)
+    messages = [{"role": "user", "content": "The cat"}]
+    short, _ = chat_cli.respond(loaded, messages, 3, io.StringIO(), temperature=0.0)
+    assert history[-1]["content"] == short  # the reply was written with the new length
+    assert short != chat_cli.respond(loaded, messages, 8, io.StringIO(), temperature=0.0)[0]
+
+    chat_cli.chat_loop(loaded, args, scripted(["/settings top-k 40", "/settings reset"]), out)
+    assert "Top-k is now 40" in out.getvalue() and "back to what this chat started with" in out.getvalue()
+    assert (args.max_new_tokens, args.top_k) == (3, 0)  # what that chat started with
+
+
+def test_chat_model_lists_and_switches(tiny_run, tmp_path, monkeypatch):
+    """The tiny model is a base model; it is re-saved with ``stage: sft`` to stand in for a chat model."""
+    state = torch.load(tiny_run.checkpoint, map_location="cpu", weights_only=True)
+    run = tmp_path / "runs" / "chat"
+    run.mkdir(parents=True)
+    torch.save({**state, "stage": "sft", "step": 20, "best_val_loss": 3.5}, run / "best.pt")
+    (tmp_path / "broken.pt").write_bytes(b"half-written")
+    monkeypatch.chdir(tmp_path)  # /model looks in release/ and runs/ of the current folder
+    out = io.StringIO()
+    inputs = ["/model 2", "/info", "The cat", "/model", "/model 1", "/model 7", "/model nowhere.pt"]
+    inputs += ["/model broken.pt", f'/model "{tiny_run.checkpoint}"', "/info", "The dog"]
+    history = chat_cli.chat_loop(load_model(tiny_run.checkpoint), chat_args(), scripted(inputs), out)
+    text = out.getvalue()
+    first, second = text.split("Chat model, 20 steps", 1)  # /info after the first switch
+    assert "Now talking to chat/best.pt." in first and "conversation so far" not in first
+    assert "(in use)" in second and "chat · step 20 · best · val loss 3.500 (in use)" in second
+    assert "Already talking to chat/best.pt" in second and "There is no model 7" in second
+    assert "There is no model at nowhere.pt" in second
+    assert "Couldn't load broken.pt" in second and "Still talking to chat/best.pt" in second
+    back = second.split("Couldn't load", 1)[1]
+    assert "Now talking to" in back and "It can see the conversation so far." in back
+    assert "This is a Base model" in back and "Base model (continues text)" in back
+    assert [m["role"] for m in history] == ["user", "assistant"] * 2  # both models answered
+
+
 # ---------------------------------------------------------------- terminal look
 
 
@@ -266,6 +320,17 @@ def test_styled_chat_draws_the_welcome_panel_and_replies(tiny_run):
     assert "●" in text and "tokens" in text  # a reply and its meta line
     assert "/retry" in text and "Trained as" in text and "New chat" in text
     assert history == []
+
+
+def test_styled_chat_draws_models_and_settings(tiny_run, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # no release/ or runs/ here: only the model in use is listed
+    out = io.StringIO()
+    term = Term(out, fancy=True, color=True, unicode=True, light=False)
+    inputs = ["/model", "/settings", "/settings penalty 1.2"]
+    chat_cli.chat_loop(load_model(tiny_run.checkpoint), chat_args(), scripted(inputs), out, term)
+    text = ANSI.sub("", out.getvalue())
+    assert "Models" in text and "(in use)" in text and "No other chat model" in text
+    assert "Settings" in text and "Reply length" in text and "Repetition penalty is now 1.2" in text
 
 
 def test_term_helpers():

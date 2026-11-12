@@ -235,6 +235,14 @@ def _label(path: Path, info: dict[str, Any]) -> str:
     return " · ".join(parts)
 
 
+def choice_for(loaded: LoadedModel) -> ModelChoice:
+    """The choice for a model that is already loaded (``find_models`` may not list it, e.g. a base model)."""
+    source, info = loaded.source, loaded.info
+    return ModelChoice(
+        source.as_posix(), source, _label(source, info), info.get("step"), info.get("best_val_loss")
+    )
+
+
 def _choice_id(path: Path, root: Path) -> str:
     try:
         return path.resolve().relative_to(root.resolve()).as_posix()
@@ -364,14 +372,7 @@ class ChatServer(ThreadingHTTPServer):
         for choice in self.models.values():
             if choice.path.resolve() == source:
                 return choice.id
-        info = loaded.info
-        current = ModelChoice(
-            loaded.source.as_posix(),
-            loaded.source,
-            _label(loaded.source, info),
-            info.get("step"),
-            info.get("best_val_loss"),
-        )
+        current = choice_for(loaded)
         self.models = {current.id: current, **self.models}
         return current.id
 

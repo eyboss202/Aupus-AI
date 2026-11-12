@@ -303,7 +303,11 @@ The terminal chat has the same look in text: Aupus blue and the owl in a welcome
 input line with a status line under it (commands, and a bar for how much of the memory the chat
 fills), and replies that stream in word-wrapped, with their length and speed underneath. `/new`
 starts over, `/retry` writes the last reply again, `/save` saves the chat like the browser's "Save
-chat", `/info` describes the model and `/exit` quits. Piped or redirected it writes plain text;
+chat", `/info` describes the model and `/exit` quits. `/model` lists the same models as the
+browser's picker and `/model 2` (or `/model <path>`, for any release folder or checkpoint) switches
+to another one, keeping the conversation. `/settings` shows the temperature, reply length, top-p,
+top-k and repetition penalty, and `/settings temperature 0.5` changes one from the next reply on
+(`/settings reset` undoes the changes). Piped or redirected it writes plain text;
 `NO_COLOR=1` turns the colours off and `AUPUS_THEME=light` suits a light terminal background.
 
 ## Repository layout

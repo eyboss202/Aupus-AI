@@ -7,6 +7,12 @@ Type a message and press Enter. Commands start with ``/``: ``/help`` lists them 
 over, ``/retry`` writes the last reply again, ``/save`` keeps the chat for training, ``/exit``
 quits; so does Ctrl-D). Ctrl-C during a reply stops that reply.
 
+``/model`` lists the chat models found in ``release/`` and ``runs/`` (the browser chat's model
+picker); ``/model 2`` switches to the second one and ``/model <path>`` to any release folder or
+checkpoint, keeping the conversation. ``/settings`` shows the sampling settings (temperature, reply
+length, top-p, top-k, repetition penalty) and ``/settings temperature 0.5`` changes one from the
+next reply on; ``/settings reset`` goes back to what the chat started with.
+
 **Look.** In a terminal the chat has the browser chat's colours and owl (``aupus/cli/term.py``): a
 welcome panel, a ruled input line with a status line under it (commands, and how much of the
 model's memory the chat fills), and replies that stream in word-wrapped. Piped or redirected,
@@ -24,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import gc
 import math
 import random
 import sys
@@ -31,7 +38,9 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
+
+import torch
 
 from aupus import __version__
 from aupus.cli.generate import add_model_args, add_sampling_args, open_model, sampling_kwargs
@@ -49,15 +58,20 @@ from aupus.cli.term import (
     wrap,
 )
 from aupus.model import stream
-from aupus.model.io import LoadedModel
+from aupus.model.io import LoadedModel, load_model
 from aupus.tokenizer import END, EOS, Tokenizer
 from aupus.tokenizer.chat import Message, prompt_ids
+
+if TYPE_CHECKING:
+    from aupus.cli.web import ModelChoice
 
 COMMANDS: list[tuple[str, str]] = [
     ("/help", "show these commands"),
     ("/new", "start over: Aupus forgets the conversation (also /reset, /clear)"),
     ("/retry", "write the last reply again"),
     ("/save", "save this chat to correct by hand and train on"),
+    ("/model", "list the models; /model 2 (or a path) switches to another one"),
+    ("/settings", "show the settings; /settings temperature 0.5 changes one"),
     ("/info", "the model and the sampling settings"),
     ("/exit", "quit (also /quit, Ctrl-D)"),
 ]
@@ -71,6 +85,27 @@ SUGGESTIONS = [
 #: What the spinner says while Aupus reads the conversation, before its first word.
 THINKING = ["Pondering", "Hooting", "Mulling it over", "Recalling", "Perching", "Musing", "Preening"]
 PLAIN_PROMPT = "\nyou> "
+
+#: What /settings changes: (the name, as in the browser chat; the ``args`` attribute; what it does).
+#: The name is what to type (``/settings reply length 128``); ``SETTING_ALIASES`` are shorter ways.
+SETTINGS: list[tuple[str, str, str]] = [
+    ("Temperature", "temperature", "how adventurous the wording is; 0 always picks the likeliest word"),
+    ("Reply length", "max_new_tokens", "the most tokens a reply can have"),
+    ("Top-p", "top_p", "words come from the likeliest ones that add up to this share; 1 = off"),
+    ("Top-k", "top_k", "words come from this many of the likeliest; 0 = off"),
+    ("Repetition penalty", "repetition_penalty", "above 1, words already used get less likely; 1 = off"),
+]
+SETTING_ALIASES = {
+    "temp": "temperature",
+    "length": "reply-length",
+    "max-new-tokens": "reply-length",
+    "n": "reply-length",
+    "topp": "top-p",
+    "topk": "top-k",
+    "penalty": "repetition-penalty",
+    "repetition": "repetition-penalty",
+}
+BASE_NOTE = "This is a Base model: it learned to continue web text, not to chat, so it will ramble."
 
 
 @dataclass
@@ -178,7 +213,12 @@ class ChatView:
     """Draws the chat: plain text when ``term`` isn't fancy (pipes, tests), styled otherwise."""
 
     def __init__(self, term: Term, loaded: LoadedModel, max_new_tokens: int) -> None:
-        self.t, self.loaded, self.max_new_tokens = term, loaded, max_new_tokens
+        self.t, self.max_new_tokens = term, max_new_tokens
+        self.use(loaded)
+
+    def use(self, loaded: LoadedModel) -> None:
+        """Draw the chat for ``loaded`` from now on (at the start, and after /model)."""
+        self.loaded = loaded
         self.device = next(loaded.model.parameters()).device
         self.window = loaded.model.cfg.context_length
         self.used: int | None = None  # tokens of memory the chat filled at the last reply
@@ -240,8 +280,7 @@ class ChatView:
         for line in wrap(about, width - 2):
             t.write("  " + t.paint(line, "muted") + "\n")
         if is_base(loaded):
-            note = "This is a Base model: it learned to continue web text, not to chat, so it will ramble."
-            for i, line in enumerate(wrap(note, width - 4)):
+            for i, line in enumerate(wrap(BASE_NOTE, width - 4)):
                 t.write(t.paint(f"  {t.g['warn'] if i == 0 else ' '} {line}\n", "warn"))
 
     # ------------------------------------------------------------ input
@@ -304,7 +343,8 @@ class ChatView:
     def table(self, title: str, rows: list[tuple[str, str]]) -> None:
         t = self.t
         if not t.fancy:
-            t.write(title + "\n" + "".join(f"  {a:<14} {b}\n" for a, b in rows))
+            key_w = max(14, *(len(a) for a, _ in rows))
+            t.write(title + "\n" + "".join(f"  {a:<{key_w}} {b}\n" for a, b in rows))
             return
         self.note(title, "brand")
         key_w = max(cell_width(a) for a, _ in rows) + 2
@@ -355,7 +395,7 @@ class ChatView:
         facts = [f"{number(reply.tokens)} token{'' if reply.tokens == 1 else 's'}"]
         if reply.seconds > 0:
             facts.append(f"{number((reply.tokens - 1) / reply.seconds)} tok/s")
-        flags = {"length": "may be cut off: it reached the reply length (-n)", "stopped": "stopped"}
+        flags = {"length": "may be cut off: it reached the reply length (/settings)", "stopped": "stopped"}
         line = t.paint(dot.join(facts), "faint")
         flag = flags.get(reply.finish)
         if flag and cell_width(dot.join(facts) + dot + flag) <= t.width() - 2:
@@ -397,6 +437,8 @@ def chat_loop(
     term = term or Term(out)
     view = ChatView(term, loaded, args.max_new_tokens)
     sampling = sampling_kwargs(args, view.device)
+    started_with = {attr: getattr(args, attr) for _, attr, _ in SETTINGS}  # for /settings reset
+    choices: list[ModelChoice] | None = None  # what /model listed last: /model 2 picks from it
     system: list[Message] = [{"role": "system", "content": args.system}] if args.system else []
     messages = list(system)
     view.welcome()
@@ -413,6 +455,40 @@ def chat_loop(
         messages.append({"role": "assistant", "content": reply.text})
         return True
 
+    def switch_model(path: Path) -> None:
+        """Load the model at ``path`` in place of the current one, which stays if that fails."""
+        nonlocal loaded
+        current = model_name(loaded)
+        if not path.exists():
+            view.note(
+                f"There is no model at {path.as_posix()}. /model lists the ones found here; "
+                "a path can be a release folder or a checkpoint (.pt).",
+                "warn",
+            )
+            return
+        if path.resolve() == loaded.source.resolve():
+            view.note(f"Already talking to {current}.")
+            return
+        try:
+            new = run_with_spinner(
+                term, f"Waking {path.name} up", lambda: load_model(path, device=view.device)
+            )
+        except KeyboardInterrupt:
+            view.note(f"Stopped. Still talking to {current}.")
+            return
+        except Exception as e:  # noqa: BLE001 (not a model, a half-written checkpoint, ...)
+            view.note(f"Couldn't load {path.as_posix()}: {e}. Still talking to {current}.", "danger")
+            return
+        loaded = new  # type: ignore[assignment]
+        view.use(loaded)
+        gc.collect()  # only one model is kept: free the old one
+        if view.device.type == "cuda":
+            torch.cuda.empty_cache()
+        kept = " It can see the conversation so far." if len(messages) > len(system) else ""
+        view.note(f"Now talking to {model_name(loaded)}.{kept}")
+        if is_base(loaded):
+            view.note(BASE_NOTE, "warn")
+
     try:
         while True:
             try:
@@ -423,6 +499,7 @@ def chat_loop(
                 continue
             view.echo(line)
             command = line.split()[0].lower() if line.startswith("/") else None
+            words = line.split()[1:] if command else []
             if command in ("/exit", "/quit"):
                 break
             if command in ("/reset", "/new", "/clear"):
@@ -439,6 +516,28 @@ def chat_loop(
                 continue
             if command == "/save":
                 save(messages, args, view)
+                continue
+            if command == "/settings":
+                if words:
+                    change_setting(words, args, view, started_with)
+                    # Sample that way from the next reply on, with the same (seeded) dice.
+                    sampling.update(sampling_kwargs(args, view.device), generator=sampling["generator"])
+                    view.max_new_tokens = args.max_new_tokens
+                else:
+                    show_settings(args, view)
+                continue
+            if command == "/model":
+                target = line.split(None, 1)[1].strip().strip("\"'") if words else ""
+                if choices is None or not target:  # look again: training may have written new ones
+                    choices = find_choices(loaded, term)
+                if not target:
+                    show_models(choices, loaded, view)
+                elif not target.isdigit():
+                    switch_model(Path(target).expanduser())
+                elif 1 <= int(target) <= len(choices):
+                    switch_model(choices[int(target) - 1].path)
+                else:
+                    view.note(f"There is no model {target}: /model lists them.", "warn")
                 continue
             if command == "/retry":
                 if not messages or messages[-1]["role"] != "assistant":
@@ -459,6 +558,112 @@ def chat_loop(
         term.cursor(True)
     view.goodbye()
     return messages
+
+
+# ---------------------------------------------------------------- /model and /settings
+
+
+def find_choices(loaded: LoadedModel, term: Term) -> list[ModelChoice]:
+    """What /model offers: the chat models in ``release/`` and ``runs/`` here, and the one in use."""
+    from aupus.cli.web import choice_for, find_models  # here: web imports this module
+
+    choices: list[ModelChoice] = run_with_spinner(term, "Looking for models", lambda: find_models(Path()))  # type: ignore[assignment]
+    source = loaded.source.resolve()
+    if not any(c.path.resolve() == source for c in choices):
+        choices.insert(0, choice_for(loaded))
+    return choices
+
+
+def show_models(choices: list[ModelChoice], loaded: LoadedModel, view: ChatView) -> None:
+    dot = f" {view.t.g['dot']} "
+    source = loaded.source.resolve()
+    rows = []
+    for i, choice in enumerate(choices, 1):
+        text = choice.label.replace(" · ", dot)
+        if choice.val_loss is not None:
+            text += f"{dot}val loss {choice.val_loss:.3f}"
+        if choice.path.resolve() == source:
+            text += " (in use)"
+        rows.append((str(i), text))
+    view.table("Models", rows)
+    view.note(
+        "Switch with /model <number>, or /model <path> for any release folder or checkpoint (.pt)."
+        if len(choices) > 1
+        else "No other chat model in release/ or runs/ here. /model <path> loads a release folder "
+        "or a checkpoint (.pt) from anywhere."
+    )
+
+
+def setting_limits(attr: str, window: int) -> tuple[float, float]:
+    """The range a setting can take: the browser chat's, and a reply at most half the memory."""
+    from aupus.cli.web import LIMITS  # here: web imports this module
+
+    lo, hi = LIMITS[attr]
+    # generate_reply keeps the other half of the context window for the conversation.
+    return (lo, min(hi, window // 2)) if attr == "max_new_tokens" else (lo, hi)
+
+
+def show_settings(args: argparse.Namespace, view: ChatView) -> None:
+    dot = f" {view.t.g['dot']} "
+    rows = []
+    for label, attr, hint in SETTINGS:
+        lo, hi = setting_limits(attr, view.window)
+        rows.append((label, f"{getattr(args, attr):g}{dot}{lo:g} to {hi:g}{dot}{hint}"))
+    view.table("Settings", rows)
+    view.note(
+        "Change one with /settings <name> <value>, for example /settings temperature 0.5 or "
+        "/settings reply length 128. /settings reset undoes your changes."
+    )
+
+
+def change_setting(
+    words: list[str], args: argparse.Namespace, view: ChatView, started_with: dict[str, float]
+) -> None:
+    """``/settings temperature 0.5``, ``/settings reply length 128``, ``/settings reset``: sets ``args``."""
+    from aupus.cli.web import INTEGER_SETTINGS  # here: web imports this module
+
+    if [w.lower() for w in words] == ["reset"]:
+        for attr, value in started_with.items():
+            setattr(args, attr, value)
+        view.note("The settings are back to what this chat started with.")
+        return
+    try:
+        value: float | None = float(words[-1].replace(",", "."))  # "0,5" too
+    except ValueError:
+        value = None
+    if value is not None and not math.isfinite(value):
+        value = None
+    name = words if value is None else words[:-1]
+    key = "-".join(name).lower().replace("_", "-")
+    key = SETTING_ALIASES.get(key, key)
+    found = next((s for s in SETTINGS if s[0].lower().replace(" ", "-") == key), None)
+    if found is None:
+        names = ", ".join(label.lower() for label, _, _ in SETTINGS)
+        what = f"There is no setting called '{' '.join(name)}'." if name else "Which setting?"
+        view.note(f"{what} They are: {names}. For example: /settings temperature 0.5", "warn")
+        return
+    label, attr, _ = found
+    lo, hi = setting_limits(attr, view.window)
+    old = getattr(args, attr)
+    if value is None:
+        view.note(
+            f"{label} is {old:g} (it goes from {lo:g} to {hi:g}). "
+            f"Change it with /settings {label.lower()} <value>."
+        )
+        return
+    whole = attr in INTEGER_SETTINGS
+    if whole and value != int(value):
+        view.note(f"{label} is a whole number, from {lo:g} to {hi:g}.", "warn")
+        return
+    if not lo <= value <= hi:
+        view.note(f"{label} goes from {lo:g} to {hi:g}.", "warn")
+        return
+    new = int(value) if whole else value
+    if new == old:
+        view.note(f"{label} is already {old:g}.")
+        return
+    setattr(args, attr, new)
+    view.note(f"{label} is now {new:g} (it was {old:g}).")
 
 
 def info_rows(loaded: LoadedModel, args: argparse.Namespace, view: ChatView) -> list[tuple[str, str]]:
@@ -508,5 +713,5 @@ def main(argv: Sequence[str] | None = None) -> None:
     with contextlib.suppress(ImportError):  # readline: arrow keys and history in input() (not on Windows)
         import readline  # noqa: F401
     term = Term(sys.stdout)
-    loaded = run_with_spinner(term, "Waking Aupus up", lambda: open_model(args))
-    chat_loop(loaded, args, term=term)  # type: ignore[arg-type]
+    # Not kept in a variable here, so that after /model the first model's memory can be freed.
+    chat_loop(run_with_spinner(term, "Waking Aupus up", lambda: open_model(args)), args, term=term)  # type: ignore[arg-type]

@@ -12,8 +12,8 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from aupus.data import eval_batches
-from aupus.eval import (
+from vulpes.data import eval_batches
+from vulpes.eval import (
     Example,
     encode_pair,
     evaluate_loss,
@@ -22,11 +22,11 @@ from aupus.eval import (
     score_continuations,
     write_examples,
 )
-from aupus.eval import scoring as scoring_module
-from aupus.eval.tasks import arc, hellaswag, piqa
-from aupus.model import ModelConfig, Transformer
-from aupus.model.io import load_model
-from aupus.tokenizer import EOS, Tokenizer
+from vulpes.eval import scoring as scoring_module
+from vulpes.eval.tasks import arc, hellaswag, piqa
+from vulpes.model import ModelConfig, Transformer
+from vulpes.model.io import load_model
+from vulpes.tokenizer import EOS, Tokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
 

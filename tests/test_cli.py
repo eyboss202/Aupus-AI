@@ -12,15 +12,15 @@ from pathlib import Path
 import pytest
 import torch
 
-from aupus.cli import chat as chat_cli
-from aupus.cli import generate as generate_cli
-from aupus.cli.streaming import TextStream
-from aupus.cli.term import ANSI, ReplyWriter, Term, cell_width, clip, wrap
-from aupus.model import ModelConfig, Transformer, generate
-from aupus.model.generate import apply_repetition_penalty
-from aupus.model.io import export_release, load_model
-from aupus.tokenizer import EOS, Tokenizer
-from aupus.tokenizer.chat import prompt_ids
+from vulpes.cli import chat as chat_cli
+from vulpes.cli import generate as generate_cli
+from vulpes.cli.streaming import TextStream
+from vulpes.cli.term import ANSI, ReplyWriter, Term, cell_width, clip, wrap
+from vulpes.model import ModelConfig, Transformer, generate
+from vulpes.model.generate import apply_repetition_penalty
+from vulpes.model.io import export_release, load_model
+from vulpes.tokenizer import EOS, Tokenizer
+from vulpes.tokenizer.chat import prompt_ids
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -60,6 +60,18 @@ def test_half_precision_export_is_smaller_and_close(tiny_run, tmp_path, dtype):
     assert 0 < diff < 0.1
 
 
+def test_release_from_before_the_rename_still_loads(tiny_run, tmp_path):
+    """Releases exported while the project was called Aupus say ``aupus-release``."""
+    out = export_release(tiny_run.checkpoint, tmp_path / "rel")
+    info = json.loads((out / "release.json").read_text())
+    assert info["format"] == "vulpes-release"
+    (out / "release.json").write_text(json.dumps(info | {"format": "aupus-release"}))
+    assert load_model(out).info["kind"] == "release"
+    (out / "release.json").write_text(json.dumps(info | {"format": "other"}))
+    with pytest.raises(ValueError, match="not a vulpes-release"):
+        load_model(out)
+
+
 def test_export_refuses_to_overwrite(tiny_run, tmp_path):
     export_release(tiny_run.checkpoint, tmp_path / "rel")
     with pytest.raises(FileExistsError, match="not empty"):
@@ -75,7 +87,7 @@ def test_missing_model_path_gives_a_clear_error(tmp_path):
 
 
 def test_load_checks_the_tokenizer(tiny_run):
-    other = ROOT / "data" / "tokenizer" / "aupus-bpe-32k.json"
+    other = ROOT / "data" / "tokenizer" / "vulpes-bpe-32k.json"
     with pytest.raises(ValueError, match="SHA-256"):
         load_model(tiny_run.checkpoint, tokenizer_path=other)
 
@@ -315,8 +327,8 @@ def test_styled_chat_draws_the_welcome_panel_and_replies(tiny_run):
     inputs = ["The cat", "/help", "/info", "/new", "/exit"]
     history = chat_cli.chat_loop(load_model(tiny_run.checkpoint), chat_args(), scripted(inputs), out, term)
     text = out.getvalue()
-    assert "What shall we learn today?" in text and "╭" in text and "▜▄" in text  # panel and owl
-    assert "\x1b[38;" in text  # Aupus blue
+    assert "What shall we learn today?" in text and "╭" in text and "█▄▖" in text  # panel and fox
+    assert "\x1b[38;" in text  # Vulpes orange
     assert "●" in text and "tokens" in text  # a reply and its meta line
     assert "/retry" in text and "Trained as" in text and "New chat" in text
     assert history == []

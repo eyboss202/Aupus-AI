@@ -1,4 +1,4 @@
-"""Train the Aupus BPE tokenizer and report how good and how fast it is.
+"""Train the Vulpes BPE tokenizer and report how good and how fast it is.
 
 Steps (each timed):
   1. count distinct pre-tokenized chunks in the training JSONL (parallel);
@@ -13,7 +13,7 @@ measured numbers.
 
 Usage:
     python scripts/train_tokenizer.py                       # 32k vocab on the M3 sample
-    python scripts/train_tokenizer.py --vocab-size 8192 --out data/tokenizer/aupus-bpe-8k
+    python scripts/train_tokenizer.py --vocab-size 8192 --out data/tokenizer/vulpes-bpe-8k
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from aupus.tokenizer import SPECIAL_TOKENS, Tokenizer, count_chunks, train_bpe
+from vulpes.tokenizer import SPECIAL_TOKENS, Tokenizer, count_chunks, train_bpe
 
 
 def read_jsonl(path: Path, max_docs: int | None = None) -> Iterator[str]:
@@ -44,7 +44,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=fmt)
     parser.add_argument("--input", type=Path, default=Path("data/tokenizer_sample/train.jsonl"))
     parser.add_argument("--heldout", type=Path, default=Path("data/tokenizer_sample/heldout.jsonl"))
-    parser.add_argument("--out", type=Path, default=Path("data/tokenizer/aupus-bpe-32k"), help="no suffix")
+    parser.add_argument("--out", type=Path, default=Path("data/tokenizer/vulpes-bpe-32k"), help="no suffix")
     parser.add_argument("--vocab-size", type=int, default=32000)
     parser.add_argument("--min-frequency", type=int, default=2)
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 1)

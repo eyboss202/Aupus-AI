@@ -6,7 +6,7 @@ directory (``scripts/export_release.py``). Benchmarks come from
 
 Usage:
     python scripts/download_eval_data.py                                   # once, ~7 MB
-    python scripts/evaluate.py --model runs/aupus-0.1-base/best.pt --val-data data/pretrain/fineweb_edu
+    python scripts/evaluate.py --model runs/vulpes-0.1-base/best.pt --val-data data/pretrain/fineweb_edu
     python scripts/evaluate.py --model runs/tiny/best.pt --tasks piqa --limit 200   # quick look
 
 Cost: the three tasks are ~14K questions, ~45K scored continuations, ~3.8M
@@ -25,9 +25,9 @@ from pathlib import Path
 
 import torch
 
-from aupus.eval import RANDOM_BASELINE, TASKS, evaluate_loss, read_examples, run_task
-from aupus.model.io import load_model
-from aupus.train import resolve_device
+from vulpes.eval import RANDOM_BASELINE, TASKS, evaluate_loss, read_examples, run_task
+from vulpes.model.io import load_model
+from vulpes.train import resolve_device
 
 
 def main() -> None:

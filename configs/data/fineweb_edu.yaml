@@ -1,5 +1,5 @@
-# Pretraining data settings for Aupus 0.1 (FineWeb-Edu). See docs/DATA.md for what each rule does.
-# Every key is optional (the defaults in aupus/data/config.py are these values); typos fail loudly.
+# Pretraining data settings for Vulpes 0.1 (FineWeb-Edu). See docs/DATA.md for what each rule does.
+# Every key is optional (the defaults in vulpes/data/config.py are these values); typos fail loudly.
 filters:
   min_words: 50
   max_words: 100000

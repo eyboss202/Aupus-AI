@@ -1,4 +1,4 @@
-# Training Aupus 0.1 Base on RunPod
+# Training Vulpes 0.1 Base on RunPod
 
 The full pretraining run (`small`, 125M parameters, 2.5B tokens) on one rented RTX 4090,
 for about **5–6 USD of a 10 USD budget**. Three scripts do the work:
@@ -43,7 +43,7 @@ RunPod → Settings → SSH Public Keys *before* creating the pod.
    PRICE_PER_HOUR=0.34 bash scripts/runpod/setup.sh
    ```
 
-   It runs in tmux (`Ctrl-b d` leaves it, `tmux attach -t aupus-setup` comes back) and ends with
+   It runs in tmux (`Ctrl-b d` leaves it, `tmux attach -t vulpes-setup` comes back) and ends with
    the measured speed, the projected hours and cost, and the two commands below.
 3. **Train:**
 
@@ -61,9 +61,9 @@ RunPod → Settings → SSH Public Keys *before* creating the pod.
    python scripts/runpod/sync.py "ssh root@<ip> -p <port> -i ~/.ssh/id_ed25519"
    ```
 
-   It keeps `runs/aupus-0.1-base/` on the PC up to date (newest checkpoint, `best.pt`, logs,
+   It keeps `runs/vulpes-0.1-base/` on the PC up to date (newest checkpoint, `best.pt`, logs,
    metrics, TensorBoard). If the PC is off, nothing breaks; it catches up when it runs again.
-5. **The end:** `train.sh` evaluates `best.pt` (results in `runs/aupus-0.1-base/eval_best.json`),
+5. **The end:** `train.sh` evaluates `best.pt` (results in `runs/vulpes-0.1-base/eval_best.json`),
    then waits up to 2 h (`WAIT_FOR_PC_MIN`) for `sync.py` to copy and check everything, then stops
    the pod. When `sync.py` prints "All copied and checked", **terminate the pod** (Pods → ⋮ →
    Terminate): a stopped pod still pays for its disk (40 GB ≈ 0.27 USD per day).
@@ -72,11 +72,11 @@ RunPod → Settings → SSH Public Keys *before* creating the pod.
 
 | What happened | What you lose | What to do |
 |---|---|---|
-| SSH dropped | nothing (tmux) | reconnect, `tmux attach -t aupus` |
+| SSH dropped | nothing (tmux) | reconnect, `tmux attach -t vulpes` |
 | You pressed Ctrl-C once in tmux | nothing: it finishes the step and saves | `bash scripts/runpod/train.sh` |
 | `MAX_HOURS` reached | nothing: saved | more budget: `train.sh` again; or finish on the PC (below) |
 | Pod stopped (Stop button, balance, RunPod) | steps since the last save (≤ ~10 min) | Start the pod, `bash scripts/runpod/train.sh` (it reinstalls tmux and resumes) |
-| Machine gone, or pod terminated | everything after the PC's last copy | new pod, `setup.sh`, copy the run back (`scp -P <port> -r runs/aupus-0.1-base root@<ip>:/workspace/Aupus-AI/runs/`), `train.sh` |
+| Machine gone, or pod terminated | everything after the PC's last copy | new pod, `setup.sh`, copy the run back (`scp -P <port> -r runs/vulpes-0.1-base root@<ip>:/workspace/Aupus-AI/runs/`), `train.sh` |
 
 `train.sh` always resumes the newest checkpoint; extra `key=value` arguments go to
 `scripts/train.py` (for example `max_steps=...` decided *before* starting, since the learning-rate
@@ -86,7 +86,7 @@ curve depends on it).
 Super with the same data and order (docs/TRAINING.md, "Moving a run to another machine"):
 
 ```powershell
-python scripts/train.py --resume runs/aupus-0.1-base micro_batch=1 grad_accum=256 eval_batches=800 grad_checkpointing=true cuda_memory_limit_gib=2.9 save_every=10 eval_every=40 sample_every=200 log_every=1
+python scripts/train.py --resume runs/vulpes-0.1-base micro_batch=1 grad_accum=256 eval_batches=800 grad_checkpointing=true cuda_memory_limit_gib=2.9 save_every=10 eval_every=40 sample_every=200 log_every=1
 ```
 
 `setup.sh` refuses data that differs from the PC's (the token and window counts of docs/PLAN.md

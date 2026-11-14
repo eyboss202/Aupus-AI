@@ -1,11 +1,11 @@
-"""Fine-tune a Base checkpoint on conversations: Aupus 0.1 Base -> Aupus 0.1 Instruct (Milestone 10).
+"""Fine-tune a Base checkpoint on conversations: Vulpes 0.1 Base -> Vulpes 0.1 Instruct (Milestone 10).
 
 Needs the conversations from ``scripts/prepare_sft_data.py`` and a Base
 checkpoint (``init_from`` in the config, usually ``runs/<base run>/best.pt``)::
 
-    python scripts/sft.py --config configs/sft/aupus-0.1-instruct.yaml
-    python scripts/sft.py --config configs/sft/aupus-0.1-instruct.yaml init_from=runs/tiny/best.pt run_name=t
-    python scripts/sft.py --resume runs/aupus-0.1-instruct        # after Ctrl-C or a crash
+    python scripts/sft.py --config configs/sft/vulpes-0.1-instruct.yaml
+    python scripts/sft.py --config configs/sft/vulpes-0.1-instruct.yaml init_from=runs/tiny/best.pt run_name=t
+    python scripts/sft.py --resume runs/vulpes-0.1-instruct        # after Ctrl-C or a crash
 
 Same run layout, logging and Ctrl-C behaviour as ``scripts/train.py``. The run
 stops early when validation loss stops improving; ``best.pt`` is the model to
@@ -19,8 +19,8 @@ import json
 import sys
 from pathlib import Path
 
-from aupus.config import load_yaml, parse_override
-from aupus.train.sft import SFTConfig, SFTTrainer
+from vulpes.config import load_yaml, parse_override
+from vulpes.train.sft import SFTConfig, SFTTrainer
 
 
 def main() -> None:

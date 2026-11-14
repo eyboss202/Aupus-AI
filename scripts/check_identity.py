@@ -8,8 +8,8 @@ Warnings (the file works, but probably isn't what you want):
   * fewer than 30 conversations, or the same user question twice;
   * something that looks personal: an email address, a phone number or a link
     (this file is public once committed);
-  * text that doesn't look like English (Aupus only learned English);
-  * a reply that never says the name "Aupus" in a conversation about its name;
+  * text that doesn't look like English (Vulpes only learned English);
+  * a reply that never says the name "Vulpes" in a conversation about its name;
   * very long replies (identity answers should be short).
 
 Usage:
@@ -26,9 +26,9 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from aupus.data.sft import identity_conversations
-from aupus.tokenizer import Tokenizer
-from aupus.tokenizer.chat import render
+from vulpes.data.sft import identity_conversations
+from vulpes.tokenizer import Tokenizer
+from vulpes.tokenizer.chat import render
 
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 PHONE = re.compile(r"\+?\d[\d ()-]{7,}\d")
@@ -87,7 +87,7 @@ def check(path: Path, tokenizer: Tokenizer, context: int) -> tuple[list[str], li
                     warnings.append(f"{where}: {m['role']} text contains {label} (this file is public)")
             if non_english_share(text) > 0.05:
                 warnings.append(
-                    f"{where}: {m['role']} text doesn't look like English (Aupus is English-only)"
+                    f"{where}: {m['role']} text doesn't look like English (Vulpes is English-only)"
                 )
             if m["role"] == "user":
                 seen[text.strip().lower()] += 1
@@ -99,8 +99,8 @@ def check(path: Path, tokenizer: Tokenizer, context: int) -> tuple[list[str], li
                     )
         users = " ".join(m["content"] for m in msgs if m["role"] == "user")
         replies = " ".join(m["content"] for m in msgs if m["role"] == "assistant")
-        if NAME_QUESTION.search(users) and "aupus" not in replies.lower():
-            warnings.append(f"{where}: asks about its name, but no reply says 'Aupus'")
+        if NAME_QUESTION.search(users) and "vulpes" not in replies.lower():
+            warnings.append(f"{where}: asks about its name, but no reply says 'Vulpes'")
     for question, n in seen.items():
         if n > 1:
             warnings.append(f"the user question {question[:60]!r} appears {n} times (vary the wording)")
@@ -119,7 +119,7 @@ def main() -> None:
     fmt = argparse.RawDescriptionHelpFormatter
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=fmt)
     parser.add_argument("--file", type=Path, default=Path("data/identity.jsonl"))
-    parser.add_argument("--tokenizer", type=Path, default=Path("data/tokenizer/aupus-bpe-32k.json"))
+    parser.add_argument("--tokenizer", type=Path, default=Path("data/tokenizer/vulpes-bpe-32k.json"))
     parser.add_argument("--context", type=int, default=1024)
     args = parser.parse_args()
     if not args.file.exists():

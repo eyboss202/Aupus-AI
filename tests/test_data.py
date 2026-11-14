@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 import torch
 
-from aupus.config import ConfigError, load_config
-from aupus.data import (
+from vulpes.config import ConfigError, load_config
+from vulpes.data import (
     DataConfig,
     DedupConfig,
     Deduplicator,
@@ -29,9 +29,9 @@ from aupus.data import (
     open_split,
     prepare,
 )
-from aupus.data.dedup import shingles
-from aupus.data.shards import write_meta
-from aupus.tokenizer import EOS, Tokenizer
+from vulpes.data.dedup import shingles
+from vulpes.data.shards import write_meta
+from vulpes.tokenizer import EOS, Tokenizer
 
 FILTERS = FilterConfig()
 
@@ -235,6 +235,15 @@ def test_shard_roundtrip(tmp_path, tokenizer_path):
     assert np.array_equal(np.concatenate([s.tokens for s in shards]), np.concatenate(docs))
     assert meta["splits"]["train"][0]["tokens"] == 1000
     check_tokenizer(meta, tokenizer_path)
+
+
+def test_shards_from_before_the_rename_still_open(tmp_path, tokenizer_path):
+    """Datasets prepared while the project was called Aupus say ``aupus-shards``."""
+    write_dataset(tmp_path, tokenizer_path, [np.arange(50)])
+    meta = json.loads((tmp_path / "meta.json").read_text())
+    assert meta["format"] == "vulpes-shards"
+    (tmp_path / "meta.json").write_text(json.dumps(meta | {"format": "aupus-shards"}))
+    assert len(open_split(tmp_path, "train")[1]) == 1
 
 
 def test_open_split_detects_problems(tmp_path, tokenizer_path):

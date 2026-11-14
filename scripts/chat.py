@@ -1,6 +1,6 @@
-"""Chat with Aupus in the terminal (Milestone 11). See ``aupus/cli/chat.py``."""
+"""Chat with Vulpes in the terminal (Milestone 11). See ``vulpes/cli/chat.py``."""
 
-from aupus.cli.chat import main
+from vulpes.cli.chat import main
 
 if __name__ == "__main__":
     main()

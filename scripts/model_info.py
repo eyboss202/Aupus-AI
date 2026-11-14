@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 
-from aupus.model.config import PRESET_DIR, ModelConfig, flops_per_token, param_count
+from vulpes.model.config import PRESET_DIR, ModelConfig, flops_per_token, param_count
 
 
 def main() -> None:

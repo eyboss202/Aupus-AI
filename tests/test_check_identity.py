@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from aupus.tokenizer import Tokenizer
+from vulpes.tokenizer import Tokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,7 +23,7 @@ def checker():
 
 @pytest.fixture(scope="module")
 def tok():
-    return Tokenizer.load(ROOT / "data" / "tokenizer" / "aupus-bpe-32k.json")
+    return Tokenizer.load(ROOT / "data" / "tokenizer" / "vulpes-bpe-32k.json")
 
 
 def write(path, *records):
@@ -38,8 +38,8 @@ def conv(*turns):
 
 
 def test_good_file_has_no_errors(checker, tok, tmp_path):
-    records = [conv(f"Question number {i} about you?", f"Answer {i}: I'm Aupus.") for i in range(40)]
-    records.append(conv("What is your name?", "I'm Aupus.", "And who made you?", "An open-source project."))
+    records = [conv(f"Question number {i} about you?", f"Answer {i}: I'm Vulpes.") for i in range(40)]
+    records.append(conv("What is your name?", "I'm Vulpes.", "And who made you?", "An open-source project."))
     errors, warnings, stats = checker.check(write(tmp_path / "id.jsonl", *records), tok, 1024)
     assert errors == [] and warnings == []
     assert stats["conversations"] == 41 and stats["multi_turn"] == 1
@@ -62,12 +62,12 @@ def test_warnings(checker, tok, tmp_path):
     path = write(
         tmp_path / "id.jsonl",
         conv("What's your name?", "I'm a small model."),  # name question, name never said
-        conv("What's your name?", "I'm Aupus."),  # same question twice
+        conv("What's your name?", "I'm Vulpes."),  # same question twice
         conv("Contact?", "Write to me at someone@example.com or https://example.com"),
-        conv("Como te chamas?", "Chamo-me Aupus e não falo bem português, lá está."),
+        conv("Como te chamas?", "Chamo-me Vulpes e não falo bem português, lá está."),
     )
     _, warnings, _ = checker.check(path, tok, 1024)
     text = "\n".join(warnings)
-    assert "no reply says 'Aupus'" in text and "appears 2 times" in text
+    assert "no reply says 'Vulpes'" in text and "appears 2 times" in text
     assert "an email address" in text and "a link" in text
     assert "doesn't look like English" in text and "only 4 conversations" in text

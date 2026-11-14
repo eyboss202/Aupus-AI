@@ -3,14 +3,14 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aupus"
+name = "vulpes"
 version = "0.1.0.dev0"
-description = "Aupus AI: a small English language model built completely from scratch (tokenizer, model, training, inference)."
+description = "Vulpes AI: a small English language model built completely from scratch (tokenizer, model, training, inference)."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-authors = [{ name = "Aupus AI" }]
+authors = [{ name = "Vulpes AI" }]
 keywords = ["language-model", "transformer", "llm", "from-scratch", "pytorch"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
@@ -37,10 +37,10 @@ data = ["datasets>=2.19"]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 
 [tool.setuptools.packages.find]
-include = ["aupus*"]
+include = ["vulpes*"]
 
 [tool.setuptools.package-data]
-"aupus.cli" = ["*.html", "*.svg", "fonts/*.woff2", "fonts/*.txt"]  # browser chat page, logo, fonts + OFL licenses
+"vulpes.cli" = ["*.html", "*.svg", "fonts/*.woff2", "fonts/*.txt"]  # browser chat page, logo, fonts + OFL licenses
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

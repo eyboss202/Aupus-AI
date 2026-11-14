@@ -1,12 +1,12 @@
 """Export a training checkpoint as a weights-only release directory (Milestone 11).
 
-    python scripts/export_release.py --checkpoint runs/aupus-0.1-instruct/best.pt \\
-        --out release/aupus-0.1-instruct
-    python scripts/export_release.py --checkpoint runs/aupus-0.1-base/best.pt \\
-        --out release/aupus-0.1-base --dtype bf16
+    python scripts/export_release.py --checkpoint runs/vulpes-0.1-instruct/best.pt \\
+        --out release/vulpes-0.1-instruct
+    python scripts/export_release.py --checkpoint runs/vulpes-0.1-base/best.pt \\
+        --out release/vulpes-0.1-base --dtype bf16
 
 The directory holds ``model.safetensors``, ``model.yaml``, ``tokenizer.json`` and
-``release.json`` (format: ``aupus/model/io.py``), plus ``LICENSE`` and
+``release.json`` (format: ``vulpes/model/io.py``), plus ``LICENSE`` and
 ``MODEL_CARD.md`` copied from the repository. Zip it and attach it to a GitHub
 Release; weights never go into git. ``scripts/chat.py --model <dir>`` and
 ``scripts/evaluate.py --model <dir>`` load it directly.
@@ -24,7 +24,7 @@ from pathlib import Path
 
 import torch
 
-from aupus.model.io import export_release, load_model
+from vulpes.model.io import export_release, load_model
 
 ROOT = Path(__file__).resolve().parents[1]
 

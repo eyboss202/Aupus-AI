@@ -4,7 +4,7 @@ It only reads the run directory (``config.yaml``, ``metrics.jsonl``, checkpoint 
 ``nvidia-smi`` about the GPU; it never touches the training process.
 
 Usage:
-    python scripts/train_status.py                          # runs/aupus-0.1-base
+    python scripts/train_status.py                          # runs/vulpes-0.1-base
     python scripts/train_status.py --watch 30        # refresh every 30 s (Ctrl-C quits this, not training)
 """
 
@@ -20,7 +20,7 @@ from typing import Any
 
 import yaml
 
-from aupus.train.checkpoint import list_checkpoints
+from vulpes.train.checkpoint import list_checkpoints
 
 
 def _duration(seconds: float) -> str:
@@ -97,7 +97,7 @@ def render(s: dict[str, Any], gpu: str | None) -> str:
     width = 30
     filled = round(width * s["percent"] / 100)
     lines = [
-        f"Aupus training: {s['run'].as_posix()}",
+        f"Vulpes training: {s['run'].as_posix()}",
         f"  progress    step {s['step']:,} / {s['max_steps']:,}  ({s['percent']:.1f}%)  "
         f"[{'#' * filled}{'.' * (width - filled)}]",
         f"  tokens      {s['tokens'] / 1e6:,.1f}M / {s['total_tokens'] / 1e9:.2f}B",
@@ -127,7 +127,7 @@ def render(s: dict[str, Any], gpu: str | None) -> str:
 def main() -> None:
     fmt = argparse.RawDescriptionHelpFormatter
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=fmt)
-    parser.add_argument("--run", type=Path, default=Path("runs/aupus-0.1-base"))
+    parser.add_argument("--run", type=Path, default=Path("runs/vulpes-0.1-base"))
     parser.add_argument("--watch", type=int, default=0, metavar="SECONDS", help="refresh every N seconds")
     args = parser.parse_args()
     if not (args.run / "config.yaml").exists():

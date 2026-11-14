@@ -10,7 +10,7 @@ import torch
 from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.utils.flop_counter import FlopCounterMode
 
-from aupus.model import (
+from vulpes.model import (
     IGNORE_INDEX,
     KVCache,
     ModelConfig,
@@ -21,8 +21,8 @@ from aupus.model import (
     sample_next,
     stream,
 )
-from aupus.model.config import PRESET_DIR
-from aupus.model.layers import RMSNorm, RotaryEmbedding, apply_rope
+from vulpes.model.config import PRESET_DIR
+from vulpes.model.layers import RMSNorm, RotaryEmbedding, apply_rope
 
 PRESETS = sorted(p.stem for p in PRESET_DIR.glob("*.yaml"))
 

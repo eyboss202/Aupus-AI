@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from aupus.tokenizer import Tokenizer
+from vulpes.tokenizer import Tokenizer
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "train_tokenizer.py"
 

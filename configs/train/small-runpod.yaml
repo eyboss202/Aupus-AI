@@ -5,7 +5,7 @@
 # be finished on the GTX 1650 Super with `micro_batch=1 grad_accum=256 eval_batches=800 ...`
 # (docs/TRAINING.md, "Moving a run to another machine").
 # Run it with `bash scripts/runpod/train.sh`, which adds the budget stop and the pod's auto-stop.
-run_name: aupus-0.1-base
+run_name: vulpes-0.1-base
 model: small
 data_dir: data/pretrain/fineweb_edu
 seq_len: 1024

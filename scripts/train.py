@@ -1,4 +1,4 @@
-"""Pretrain an Aupus model (Milestones 6 and 8).
+"""Pretrain a Vulpes model (Milestones 6 and 8).
 
 Start a run from a config in ``configs/train/``, optionally overriding any key
 (dotted keys reach nested settings; values are parsed as YAML)::
@@ -16,7 +16,17 @@ checkpoint. The run's own saved ``config.yaml`` is used; overrides still apply
 hours of this session, e.g. to stay inside a rented GPU's budget. It isn't saved in
 the run's config, so it never follows the run to another machine::
 
-    python scripts/train.py --resume runs/aupus-0.1-base --stop-after 12
+    python scripts/train.py --resume runs/vulpes-0.1-base --stop-after 12
+
+On several GPUs, start it with ``torchrun`` (one process per GPU; ``vulpes/train/distributed.py``).
+The run is the same as on one GPU, and ``--resume`` works in both directions::
+
+    torchrun --standalone --nproc_per_node 2 scripts/train.py --config configs/train/flos-kaggle.yaml
+    torchrun --standalone --nproc_per_node 2 scripts/train.py --resume runs/vulpes-flos-1.0-base --stop-after 11
+
+Under torchrun, stop with ``--stop-after`` (or SIGTERM to the workers) rather than Ctrl-C:
+torchrun shuts its workers down soon after it gets Ctrl-C itself, possibly before the step
+being finished is saved (the checkpoint before it is always intact).
 
 Everything a run writes goes to ``<out_dir>/<run_name>/``: ``config.yaml``,
 ``model.yaml``, ``train.log``, ``metrics.jsonl``, ``tb/`` (TensorBoard:
@@ -31,8 +41,8 @@ import sys
 import threading
 from pathlib import Path
 
-from aupus.config import load_yaml, parse_override
-from aupus.train import TrainConfig, Trainer
+from vulpes.config import load_yaml, parse_override
+from vulpes.train import TrainConfig, Trainer, distributed
 
 
 def main() -> None:
@@ -60,8 +70,11 @@ def main() -> None:
     else:
         cfg = TrainConfig.from_yaml(args.config, overrides)
 
+    main_process = distributed.from_env().is_main
+
     def log(msg: str) -> None:
-        print(msg, flush=True)
+        if main_process:  # with several GPUs, one copy of every line
+            print(msg, flush=True)
 
     trainer = Trainer(cfg, resume=args.resume is not None, log=log)
     timer = None
@@ -77,6 +90,7 @@ def main() -> None:
         if timer is not None:
             timer.cancel()
             timer.join()  # a thread still alive at interpreter exit makes PyTorch abort the process
+        distributed.cleanup()
     log(json.dumps(summary))
     if not summary["finished"]:
         log(f"stopped early; continue with: python scripts/train.py --resume {cfg.run_dir.as_posix()}")

@@ -2,7 +2,7 @@
 
 Reads a JSON-lines file (``{"text": ...}`` per line), local parquet files, or
 streams FineWeb-Edu directly, then runs normalise -> filter -> dedup -> split -> tokenize -> shard
-(see ``aupus/data/pipeline.py``). Writes ``meta.json``, ``stats.json`` and the
+(see ``vulpes/data/pipeline.py``). Writes ``meta.json``, ``stats.json`` and the
 ``.bin`` shards to ``--out``.
 
 Usage:
@@ -25,8 +25,8 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from aupus.config import load_config
-from aupus.data import DataConfig, iter_fineweb_edu, iter_jsonl, iter_parquet, prepare
+from vulpes.config import load_config
+from vulpes.data import DataConfig, iter_fineweb_edu, iter_jsonl, iter_parquet, prepare
 
 
 def main() -> None:
@@ -38,7 +38,7 @@ def main() -> None:
     parser.add_argument("--source", choices=["jsonl", "parquet", "fineweb-edu"], default="jsonl")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--config", type=Path, default=Path("configs/data/fineweb_edu.yaml"))
-    parser.add_argument("--tokenizer", type=Path, default=Path("data/tokenizer/aupus-bpe-32k.json"))
+    parser.add_argument("--tokenizer", type=Path, default=Path("data/tokenizer/vulpes-bpe-32k.json"))
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     parser.add_argument("--max-docs", type=int, default=None)
     args = parser.parse_args()

@@ -6,7 +6,7 @@ pod's Connect panel in quotes (docs/RUNPOD.md)::
     python scripts/runpod/sync.py "ssh root@203.0.113.7 -p 40123 -i ~/.ssh/id_ed25519"
     python scripts/runpod/sync.py "ssh root@203.0.113.7 -p 40123 -i ~/.ssh/id_ed25519" --every 0   # once
 
-Every ``--every`` minutes it copies ``runs/aupus-0.1-base/`` from the pod into the same folder
+Every ``--every`` minutes it copies ``runs/vulpes-0.1-base/`` from the pod into the same folder
 here: the newest ``step_NNNNNN.pt`` (1.5 GB), ``best.pt`` when it changed, and the small files
 (config, logs, metrics, TensorBoard, evaluation results). It keeps the newest ``--keep`` step
 checkpoints here, like the pod does. If the pod is lost, this copy is where the run continues:
@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REMOTE_REPO = "/workspace/Aupus-AI"
-RUN = "aupus-0.1-base"
+RUN = "vulpes-0.1-base"
 DONE, PULLED = "POD_DONE", "PULLED"
 STEP = re.compile(r"^step_(\d{6,})\.pt$")
 SKIP = {PULLED}

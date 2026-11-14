@@ -1,7 +1,7 @@
 """Download the evaluation benchmarks and convert them to one JSON-lines format (Milestone 9).
 
 Writes ``data/eval/<task>.jsonl``, one ``{"id", "context", "choices", "label"}``
-object per line (see ``aupus/eval/tasks.py`` for the prompt formats). Every file
+object per line (see ``vulpes/eval/tasks.py`` for the prompt formats). Every file
 is fetched at a pinned dataset revision, so the questions never change under us.
 About 7 MB in total.
 
@@ -25,7 +25,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from aupus.eval import CONVERTERS, write_examples
+from vulpes.eval import CONVERTERS, write_examples
 
 SOURCES = {
     "hellaswag": (

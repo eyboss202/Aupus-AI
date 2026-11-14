@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Prepare a RunPod pod for Aupus 0.1 Base pretraining (docs/RUNPOD.md). Run it once, inside the pod:
+# Prepare a RunPod pod for Vulpes 0.1 Base pretraining (docs/RUNPOD.md). Run it once, inside the pod:
 #
 #   cd /workspace && git clone https://github.com/eyboss202/Aupus-AI.git && cd Aupus-AI
 #   bash scripts/runpod/setup.sh
 #
-# It runs inside tmux session "aupus-setup" (an SSH drop doesn't stop it; `tmux attach -t aupus-setup`
+# It runs inside tmux session "vulpes-setup" (an SSH drop doesn't stop it; `tmux attach -t vulpes-setup`
 # comes back) and is safe to run again: finished steps are skipped. ~30-45 min, mostly building the training data, at ~0.34 USD/h on an RTX 4090:
 #   1. tmux and the GPU            4. training data: download FineWeb-Edu, build the shards, check
 #   2. Python env in /workspace       them against the PC's (docs/PLAN.md §16), delete the download
@@ -28,12 +28,12 @@ ensure_tmux() {
     apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq tmux >/dev/null
 }
 
-if [ -z "${TMUX:-}" ] && [ "${AUPUS_NO_TMUX:-0}" != 1 ]; then
+if [ -z "${TMUX:-}" ] && [ "${VULPES_NO_TMUX:-0}" != 1 ]; then
     ensure_tmux
     settings="VENV=$(printf %q "$VENV") PRICE_PER_HOUR=$(printf %q "$PRICE_PER_HOUR") WORKERS=$(printf %q "${WORKERS:-}")"
     # -A: if the setup session already exists (e.g. still building the data), attach to it instead.
     inner="cd $(printf %q "$REPO") && env $settings bash scripts/runpod/setup.sh; exec bash"
-    exec tmux new-session -A -s aupus-setup "exec bash -c $(printf %q "$inner")"
+    exec tmux new-session -A -s vulpes-setup "exec bash -c $(printf %q "$inner")"
 fi
 
 step() { printf '\n=== %s ===\n' "$*"; }
@@ -77,9 +77,9 @@ import torch
 print(f"python {sys.version.split()[0]} | torch {torch.__version__} | CUDA {torch.version.cuda}")
 problems = []
 if sys.version_info < (3, 11):
-    problems.append("Aupus needs Python 3.11+: pick a newer RunPod PyTorch template")
+    problems.append("Vulpes needs Python 3.11+: pick a newer RunPod PyTorch template")
 if tuple(int(p) for p in torch.__version__.split("+")[0].split(".")[:2]) < (2, 4):
-    problems.append("Aupus needs PyTorch 2.4+: pick a newer RunPod PyTorch template")
+    problems.append("Vulpes needs PyTorch 2.4+: pick a newer RunPod PyTorch template")
 if not torch.cuda.is_available():
     problems.append("PyTorch sees no GPU")
 else:
@@ -111,7 +111,7 @@ import json
 import sys
 from pathlib import Path
 
-from aupus.data.loader import PretrainLoader
+from vulpes.data.loader import PretrainLoader
 
 data = Path(sys.argv[1])
 splits = json.loads((data / "meta.json").read_text())["splits"]

@@ -1,4 +1,4 @@
-"""Detect the hardware and software environment Aupus will train on.
+"""Detect the hardware and software environment Vulpes will train on.
 
 Why this exists: every training decision (model size, context length, batch size,
 token budget) depends on the machine. Rather than guessing, we measure it and
@@ -210,7 +210,7 @@ def verdict(report: dict[str, Any]) -> list[str]:
 
 def _print_human(report: dict[str, Any]) -> None:
     t, cpu = report["torch"], report["cpu"]
-    print("=== Aupus AI environment check ===")
+    print("=== Vulpes AI environment check ===")
     print(f"OS            : {report['os']} (kernel {report['kernel']})")
     print(f"Python        : {report['python']}")
     print(

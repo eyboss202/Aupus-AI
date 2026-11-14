@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import http.client
 import json
 import threading
@@ -10,12 +11,12 @@ from pathlib import Path
 import pytest
 import torch
 
-from aupus.cli import web
-from aupus.data.sft import identity_conversations
-from aupus.model import generate
-from aupus.model.io import export_release, load_model
-from aupus.tokenizer import END, EOS
-from aupus.tokenizer.chat import prompt_ids
+from vulpes.cli import web
+from vulpes.data.sft import identity_conversations
+from vulpes.model import generate
+from vulpes.model.io import export_release, load_model
+from vulpes.tokenizer import END, EOS
+from vulpes.tokenizer.chat import prompt_ids
 
 
 @pytest.fixture(scope="module")
@@ -137,7 +138,7 @@ def test_stopping_early_restores_the_model(loaded):
 
 
 def test_saved_chat_is_valid_identity_format(tmp_path):
-    convo = [{"role": "user", "content": "Who are you?"}, {"role": "assistant", "content": "I'm Aupus."}]
+    convo = [{"role": "user", "content": "Who are you?"}, {"role": "assistant", "content": "I'm Vulpes."}]
     first = web.save_conversation(convo, tmp_path)
     second = web.save_conversation(convo, tmp_path)
     assert first != second and first.name.startswith("chat-")
@@ -150,7 +151,7 @@ def test_saved_chat_is_valid_identity_format(tmp_path):
 
 def test_page_and_info(server):
     status, ctype, page = request(server, "GET", "/")
-    assert status == 200 and ctype.startswith("text/html") and "<title>Aupus Chat</title>" in page
+    assert status == 200 and ctype.startswith("text/html") and "<title>Vulpes Chat</title>" in page
     # What the model writes only ever reaches the page as text: no way to build HTML from a string.
     assert not any(
         sink in page for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write")
@@ -162,6 +163,18 @@ def test_page_and_info(server):
     assert request(server, "GET", "/nope")[0] == 404
     status, ctype, logo = request(server, "GET", "/logo.svg")
     assert status == 200 and ctype == "image/svg+xml" and logo.lstrip().startswith("<svg")
+
+
+def test_tab_icon_address_changes_with_the_drawing(server):
+    """Browsers keep a tab icon while its address is the same, so the page asks for it by content hash."""
+    page = request(server, "GET", "/")[2]
+    icon = (Path(web.__file__).parent / "favicon.svg").read_bytes()
+    href = f"/favicon.svg?v={hashlib.sha256(icon).hexdigest()[:8]}"
+    assert f'<link rel="icon" type="image/svg+xml" href="{href}">' in page
+    for path in (href, "/favicon.svg", "/favicon.ico"):
+        status, ctype, body = request(server, "GET", path)
+        assert status == 200 and ctype == "image/svg+xml" and body.encode() == icon
+    assert icon != (Path(web.__file__).parent / "logo.svg").read_bytes()
 
 
 def test_fonts_are_bundled_and_served_by_exact_name(server):
@@ -183,7 +196,7 @@ def test_packaged_logo_matches_the_docs_logo():
     """The tab icon is a copy of docs/assets/logo-small.svg (the package can't reach docs/)."""
     root = Path(__file__).resolve().parents[1]
     docs = (root / "docs" / "assets" / "logo-small.svg").read_text(encoding="utf-8")
-    packaged = (root / "aupus" / "cli" / "logo.svg").read_text(encoding="utf-8")
+    packaged = (root / "vulpes" / "cli" / "logo.svg").read_text(encoding="utf-8")
     assert packaged == docs
 
 

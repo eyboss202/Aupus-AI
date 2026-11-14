@@ -13,11 +13,11 @@ import pytest
 import torch
 import yaml
 
-from aupus.config import ConfigError
-from aupus.data import DataConfig, prepare
-from aupus.model import ModelConfig, Transformer
-from aupus.tokenizer import Tokenizer
-from aupus.train import (
+from vulpes.config import ConfigError
+from vulpes.data import DataConfig, prepare
+from vulpes.model import ModelConfig, Transformer
+from vulpes.tokenizer import Tokenizer
+from vulpes.train import (
     OptimConfig,
     TrainConfig,
     Trainer,
@@ -27,7 +27,7 @@ from aupus.train import (
     resolve_model_config,
     resolve_precision,
 )
-from aupus.train import checkpoint as ckpt
+from vulpes.train import checkpoint as ckpt
 
 ROOT = Path(__file__).resolve().parents[1]
 WORDS = [
@@ -122,11 +122,11 @@ def test_config_validation_and_overrides(setup, tmp_path):
         make_cfg(setup, tmp_path, cuda_memory_limit_gib=0)
 
 
-def test_importing_aupus_enables_expandable_segments():
+def test_importing_vulpes_enables_expandable_segments():
     """Set before PyTorch allocates CUDA memory, so reserved memory can't balloon on Windows (§19)."""
     import os
 
-    import aupus  # noqa: F401  (already imported; the setting happens at first import)
+    import vulpes  # noqa: F401  (already imported; the setting happens at first import)
 
     assert "expandable_segments:True" in os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "")
 
@@ -359,7 +359,7 @@ def test_train_script_runs_and_resumes(setup, tmp_path, monkeypatch, capsys):
     spec.loader.exec_module(script)
     cfg_path = tmp_path / "run.yaml"
     cfg = make_cfg(setup, tmp_path, max_steps=2, eval_every=0)
-    from aupus.config import save_config
+    from vulpes.config import save_config
 
     save_config(cfg, cfg_path)
     monkeypatch.setattr(sys, "argv", ["train.py", "--config", str(cfg_path), "log_every=1"])
@@ -417,7 +417,7 @@ def test_train_script_stop_after(setup, tmp_path, monkeypatch, capsys):
     spec = importlib.util.spec_from_file_location("train_script", ROOT / "scripts" / "train.py")
     script = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(script)
-    from aupus.config import save_config
+    from vulpes.config import save_config
 
     cfg_path = tmp_path / "run.yaml"
     save_config(make_cfg(setup, tmp_path, max_steps=50, eval_every=0, save_every=0), cfg_path)

@@ -1,0 +1,877 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f6f2">
+<title>Vulpes Chat</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preload" href="/fonts/newsreader-latin-standard-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/instrument-sans-latin-standard-normal.woff2" as="font" type="font/woff2" crossorigin>
+<script>
+  // Before the first paint, so the page never flashes the wrong theme: the one chosen here
+  // before ("light" or "dark"), otherwise the system's. The script at the end keeps it up to date.
+  (function () {
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem("vulpes.theme")); } catch (e) {}
+    var dark = saved === "dark" || (saved !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  })();
+</script>
+<style>
+  /* Two typefaces, bundled with Vulpes (SIL Open Font License): Newsreader, a serif, for the name and
+     the headings only; Instrument Sans for everything else, including what Vulpes writes. */
+  @font-face { font-family: "Newsreader"; font-style: normal; font-weight: 200 800; font-display: swap;
+               src: url("/fonts/newsreader-latin-standard-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Instrument Sans"; font-style: normal; font-weight: 400 700; font-display: swap;
+               src: url("/fonts/instrument-sans-latin-standard-normal.woff2") format("woff2"); }
+
+  /* Paper and ink, with Vulpes orange (the colour of its fox) as the one accent: --logo is the fox's
+     own orange, for the drawing; --brand is that orange where it has to be read as text (deepened on paper).
+     --danger is a crimson, so that an error never looks like the accent.
+     --muted is for small text that has to be read (4.5:1 or better on every surface);
+     --faint only for placeholders, disabled things and decoration. */
+  :root {
+    color-scheme: light;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --bg: #f7f6f2; --surface: #ffffff; --user: #ebe8df; --hover: #efede6;
+    --text: #1d1c22; --muted: #696760; --faint: #8b8880; --border: #e2dfd6; --border-strong: #cdc9be;
+    --ink: #1d1c22; --on-ink: #f7f6f2; --brand: #b5471f; --logo: #e57952; --on-brand: #ffffff; --focus: #c2552d;
+    --danger: #b3223c; --warn: #8a5a00;
+    --ring: rgba(229, 121, 82, .15); --select: rgba(229, 121, 82, .26);
+    --shadow: 0 1px 2px rgba(29, 28, 34, .04), 0 6px 24px rgba(29, 28, 34, .05);
+    --shadow-up: 0 2px 6px rgba(29, 28, 34, .08), 0 12px 32px rgba(29, 28, 34, .12);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #1b1b1f; --surface: #242429; --user: #2f2f35; --hover: #2a2a30;
+    --text: #ecebe6; --muted: #a3a19a; --faint: #85837c; --border: #36363d; --border-strong: #4a4a52;
+    --ink: #ecebe6; --on-ink: #1b1b1f; --brand: #e57952; --logo: #e57952; --on-brand: #2a1206; --focus: #e57952;
+    --danger: #ff8296; --warn: #e0b060;
+    --ring: rgba(229, 121, 82, .16); --select: rgba(229, 121, 82, .30);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 24px rgba(0, 0, 0, .25);
+    --shadow-up: 0 2px 6px rgba(0, 0, 0, .35), 0 12px 32px rgba(0, 0, 0, .4);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+  button, select, textarea, input { font: inherit; color: inherit; }
+  button { -webkit-tap-highlight-color: transparent; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  ::selection { background: var(--select); }
+  [hidden] { display: none !important; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #announce { position: fixed; top: 0; left: 0; }
+  .icon { width: 18px; height: 18px; flex: none; }
+  .mark { color: var(--logo); flex: none; }
+  #app { height: 100%; height: 100dvh; display: flex; flex-direction: column; }
+
+  /* ---------------------------------------------------------------- header */
+  header { display: flex; align-items: center; gap: 6px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top));
+    border-bottom: 1px solid transparent; transition: border-color .2s; }
+  body.scrolled header { border-bottom-color: var(--border); }
+  .brand { display: flex; align-items: center; gap: 9px; font: 450 23px/1 var(--serif); letter-spacing: -.2px; margin-right: auto; padding-left: 4px; }
+  .brand .mark { height: 30px; width: 21.9px; margin-top: -3px; }
+  #model { font-size: 12.5px; color: var(--muted); margin-right: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-variant-numeric: tabular-nums; }
+  #model.loading { animation: breathe 1.4s ease-in-out infinite; }
+  /* The model picker: a quiet pill until it's needed; the chevron follows the theme's text colour. */
+  .model-pick { position: relative; display: flex; flex: 0 1 auto; min-width: 0; color: var(--muted); margin-right: 4px; }
+  .model-pick::after { content: ""; position: absolute; right: 12px; top: 50%; width: 6px; height: 6px; pointer-events: none;
+    border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor; transform: translateY(-70%) rotate(45deg); }
+  .model-pick:hover:not(.disabled) { color: var(--text); }
+  .model-pick.disabled::after { opacity: .4; }
+  #modelSelect { appearance: none; -webkit-appearance: none; font: 500 13px/1.2 var(--sans); color: inherit; background: transparent;
+    border: 1px solid var(--border); border-radius: 9px; padding: 8px 30px 8px 12px; width: 100%; max-width: 360px; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  #modelSelect:hover:not(:disabled) { background: var(--hover); border-color: var(--border-strong); }
+  #modelSelect:disabled { cursor: default; opacity: .6; }
+  #modelSelect option { background: var(--surface); color: var(--text); }
+  .icon-btn { width: 36px; height: 36px; border-radius: 9px; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; color: var(--muted); flex: none; }
+  .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+  .icon-btn:active:not(:disabled) { transform: scale(.94); }
+  .icon-btn:disabled { opacity: .3; cursor: default; }
+
+  /* ---------------------------------------------------------------- notices above the conversation */
+  .banner { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 9px 14px; color: var(--muted); font-size: 13.5px; margin: 2px 0 8px; }
+  .banner.offline { color: var(--danger); border-color: currentColor; }
+  .banner span { flex: 1; min-width: 0; }
+  .banner button { flex: none; border: 1px solid currentColor; background: transparent; border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
+  .banner button:hover { background: var(--hover); }
+
+  /* ---------------------------------------------------------------- empty state: everything centred */
+  main { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+  .column { width: 100%; max-width: 740px; margin: 0 auto; padding: 0 20px; }
+  #hero { min-height: 100%; display: flex; flex-direction: column; justify-content: center; padding-bottom: 12vh; }
+  #hero .hero-fox { display: block; height: 84px; width: 61.4px; margin: 0 auto 18px; color: var(--logo); }
+  #hero h1 { font: 380 42px/1.15 var(--serif); letter-spacing: -.6px; text-align: center; margin: 0 0 10px; text-wrap: balance; }
+  #hero .sub { text-align: center; color: var(--muted); margin: 0 0 30px; text-wrap: balance; }
+  .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
+  .chip { border: 1px solid var(--border); background: transparent; border-radius: 999px; padding: 6px 14px; font-size: 13.5px; color: var(--muted); cursor: pointer;
+    transition: color .15s, border-color .15s, background-color .15s; }
+  .chip:hover:not(:disabled) { color: var(--brand); border-color: var(--brand); background: var(--ring); }
+  .chip:disabled { opacity: .5; cursor: default; }
+  body.chatting #hero { display: none; }
+  body:not(.chatting) #log { display: none; }
+
+  /* ---------------------------------------------------------------- conversation */
+  #log { padding-top: 18px; padding-bottom: 30px; display: flex; flex-direction: column; gap: 28px; }
+  .msg.fresh { animation: appear .2s ease both; }
+  .msg.editing { opacity: .45; }
+  .msg.user { align-self: flex-end; max-width: 82%; display: flex; flex-direction: column; align-items: flex-end; }
+  .msg.user .bubble { background: var(--user); border-radius: 18px; padding: 9px 15px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15.5px; }
+  .msg.assistant { display: grid; grid-template-columns: 26px minmax(0, 1fr); column-gap: 12px; }
+  .msg.assistant .mark { height: 24px; width: 17.5px; margin-top: 1px; justify-self: center; }
+  .msg.assistant .body { position: relative; }
+  .msg.assistant .text { font: 400 16px/1.7 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; min-height: 27px; }
+  .msg.assistant .text.empty { color: var(--muted); font-style: italic; }
+  /* While Vulpes writes: three dots until the first word, then a caret after the last one. */
+  .dots { display: inline-flex; align-items: center; gap: 5px; height: 27px; vertical-align: top; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); opacity: .45; animation: dot 1.2s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .15s; }
+  .dots i:nth-child(3) { animation-delay: .3s; }
+  .text.streaming::after { content: ""; display: inline-block; width: 7px; height: 1.05em; margin-left: 2px; vertical-align: -.18em;
+    border-radius: 1.5px; background: var(--brand); animation: blink 1s steps(2, jump-none) infinite; }
+  /* Under a message: what can be done with it, and (for a reply) which model wrote it and how fast.
+     Always there for the newest exchange. With a mouse, the older replies show theirs on hover or
+     keyboard focus, in the space between two messages, so the conversation keeps an even rhythm. */
+  .actions { display: flex; align-items: center; gap: 2px; min-height: 27px; margin: 5px 0 0 -8px; transition: opacity .15s; }
+  .msg.user .actions { margin: 4px -8px 0 0; }
+  @media (hover: hover) {
+    .msg:not(.last) .actions { position: absolute; top: 100%; left: -8px; right: 0; margin: 0; opacity: 0; }
+    .msg:hover .actions, .msg:focus-within .actions { opacity: 1; }
+  }
+  .actions button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 12.5px; display: flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 7px; flex: none; }
+  .actions button:hover { color: var(--text); background: var(--hover); }
+  .actions .icon { width: 14px; height: 14px; }
+  .actions .meta { margin-left: auto; padding-left: 12px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .actions .meta .flag { color: var(--warn); }
+  .note { align-self: center; color: var(--muted); font-size: 12.5px; text-align: center; max-width: 90%; text-wrap: balance; }
+
+  /* ---------------------------------------------------------------- composer */
+  #dock { position: relative; padding: 8px 0 14px; padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+  body:not(.chatting) #dock { display: none; }
+  #jump { position: absolute; left: 50%; top: -44px; width: 34px; height: 34px; margin-left: -17px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--surface); color: var(--muted); box-shadow: var(--shadow); display: grid; place-items: center; cursor: pointer; animation: appear .15s ease both; }
+  #jump:hover { color: var(--text); border-color: var(--border-strong); }
+  #composer { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow); padding: 12px 12px 10px 18px;
+    transition: border-color .15s, box-shadow .15s; }
+  #composer:focus-within { border-color: color-mix(in srgb, var(--brand) 50%, var(--border)); box-shadow: var(--shadow), 0 0 0 4px var(--ring); }
+  .edit-bar { display: flex; align-items: center; gap: 8px; margin: -2px 0 6px; font-size: 12.5px; color: var(--brand); }
+  .edit-bar .icon { width: 14px; height: 14px; }
+  .edit-bar button { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 12.5px; padding: 2px 8px; border-radius: 7px; cursor: pointer; }
+  .edit-bar button:hover { color: var(--text); background: var(--hover); }
+  textarea { display: block; width: 100%; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font: 16px/1.5 var(--sans); padding: 4px 0 8px; max-height: 220px; }
+  textarea::placeholder { color: var(--faint); }
+  #composer textarea:focus-visible { outline: none; }
+  .composer-row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+  .composer-row .hint { font-size: 12px; color: var(--muted); margin-right: auto; }
+  /* How much of the model's small memory (its context window) this chat fills. */
+  .meter { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; cursor: help; }
+  .meter svg { width: 16px; height: 16px; flex: none; }
+  .meter circle { fill: none; stroke-width: 2.6; }
+  .meter .track { stroke: var(--border-strong); }
+  .meter .fill { stroke: var(--brand); stroke-linecap: round; transition: stroke-dasharray .4s ease; }
+  .meter.full { color: var(--warn); }
+  .meter.full .fill { stroke: var(--warn); }
+  #sendBtn { width: 34px; height: 34px; border-radius: 10px; border: 0; background: var(--brand); color: var(--on-brand); display: grid; place-items: center; cursor: pointer; flex: none;
+    transition: opacity .15s, transform .1s; }
+  #sendBtn:active:not(:disabled) { transform: scale(.94); }
+  #sendBtn:disabled { opacity: .25; cursor: default; }
+  .disclaimer { text-align: center; font-size: 12px; color: var(--muted); margin: 9px 0 0; }
+
+  /* ---------------------------------------------------------------- passing messages (saved, cleared, errors) */
+  #toasts { position: fixed; top: 62px; left: 0; right: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 16px; pointer-events: none; }
+  .toast { pointer-events: auto; display: flex; align-items: center; gap: 4px; max-width: min(560px, 100%); background: var(--ink); color: var(--on-ink);
+    border-radius: 12px; padding: 7px 8px 7px 14px; font-size: 13.5px; line-height: 1.4; box-shadow: var(--shadow-up); animation: drop .2s ease both; }
+  .toast span { padding: 2px 8px 2px 0; overflow-wrap: anywhere; }
+  .toast.error { background: var(--danger); color: var(--bg); }
+  .toast button { flex: none; border: 0; background: transparent; color: inherit; cursor: pointer; border-radius: 7px; padding: 3px 9px; font-size: 13px; font-weight: 600; }
+  .toast button.x { padding: 3px; display: grid; place-items: center; opacity: .7; }
+  .toast button.x .icon { width: 15px; height: 15px; }
+  .toast button:hover { background: rgba(128, 128, 128, .28); opacity: 1; }
+  .toast :focus-visible { outline-color: currentColor; }
+
+  /* ---------------------------------------------------------------- settings drawer */
+  #scrim { position: fixed; inset: 0; z-index: 10; background: rgba(20, 20, 24, .35); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  #scrim.open { opacity: 1; pointer-events: auto; }
+  #drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 20; width: min(380px, 92vw); background: var(--bg); border-left: 1px solid var(--border);
+    padding: 22px 24px 28px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
+    display: flex; flex-direction: column; gap: 20px;
+    transform: translateX(105%); visibility: hidden; transition: transform .22s ease, visibility 0s .22s; }
+  #drawer.open { transform: none; visibility: visible; transition: transform .22s ease; box-shadow: var(--shadow-up); }
+  #drawer h2 { margin: 0; font: 420 25px/1.2 var(--serif); display: flex; align-items: center; justify-content: space-between; }
+  #drawer h3 { margin: 6px 0 -8px; font: 600 11.5px/1.2 var(--sans); letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  #drawer h3:not(:first-of-type) { border-top: 1px solid var(--border); padding-top: 20px; }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+  .field > span { display: flex; justify-content: space-between; }
+  .field b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .field small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .field input[type=range] { accent-color: var(--brand); width: 100%; margin: 2px 0; cursor: pointer; }
+  .field textarea { border: 1px solid var(--border); border-radius: 12px; padding: 9px 12px; background: var(--surface); min-height: 72px; font-size: 14px; resize: vertical; max-height: 40vh; }
+  .field textarea:focus { border-color: color-mix(in srgb, var(--brand) 50%, var(--border)); box-shadow: 0 0 0 4px var(--ring); }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 11px; background: var(--hover); }
+  .seg label { position: relative; display: grid; }
+  .seg input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  .seg span { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 4px; border-radius: 8px; font-size: 13px; color: var(--muted); }
+  .seg .icon { width: 15px; height: 15px; }
+  .seg input:hover + span { color: var(--text); }
+  .seg input:checked + span { background: var(--surface); color: var(--text); font-weight: 500; box-shadow: 0 1px 2px rgba(0, 0, 0, .1); }
+  .seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .reset { align-self: flex-start; border: 1px solid var(--border); background: transparent; border-radius: 9px; padding: 6px 12px; cursor: pointer; color: var(--muted); font-size: 13px; }
+  .reset:hover:not(:disabled) { color: var(--text); background: var(--hover); border-color: var(--border-strong); }
+  .reset:disabled { opacity: .5; cursor: default; }
+  .facts { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 16px; font-size: 13.5px; }
+  .facts dt { color: var(--muted); }
+  .facts dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .keys { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 2; }
+  kbd { font: 500 11.5px/1 var(--sans); color: var(--text); background: var(--surface); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 2px 5px; }
+
+  @keyframes appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes drop { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  @keyframes breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+  @keyframes dot { 0%, 60%, 100% { opacity: .3; transform: none; } 30% { opacity: 1; transform: translateY(-3px); } }
+  @keyframes blink { from { opacity: 1; } to { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  @media (max-width: 600px) {
+    header { padding-left: 10px; padding-right: 10px; } #model { display: none; } .brand { flex: none; } .column { padding: 0 14px; }
+    #log { padding-top: 14px; padding-bottom: 24px; } #hero h1 { font-size: 33px; } #dock { padding-top: 6px; } .composer-row .hint { display: none; }
+    .msg.assistant { grid-template-columns: minmax(0, 1fr); } .msg.assistant .mark { display: none; } .msg.user { max-width: 90%; }
+    .actions .meta .model-name { display: none; } #toasts { top: 58px; }
+  }
+  @media (max-width: 440px) { .brand .word { display: none; } .meter span { display: none; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- The Vulpes fox, from the project's author's drawing (docs/assets/logo.svg), in its own orange.
+       "fox" has thicker strokes for small sizes (header, replies); "fox-large" is the original drawing. -->
+  <symbol id="fox" viewBox="0 0 2240 3064"><g fill="currentColor">
+<path transform="translate(264 61)" d="M0 0 C1.7 0.9 3.4 1.8 5.1 2.7 C15.5 8.3 25.8 14.1 36.1 20 C44.4 24.7 52.9 29.3 61.3 33.8 C68.4 37.6 75.4 41.5 82.4 45.5 C91.8 50.9 101.3 55.8 111 60.8 C119.2 65 127.2 69.4 135.2 74 C142.7 78.3 150.4 82.4 158 86.5 C169.5 92.6 180.9 99 192.2 105.4 C195.9 107.5 199.6 109.6 203.4 111.7 C265.8 146.9 265.8 146.9 291.5 163.4 C294.3 165.2 297.1 166.9 299.8 168.6 C323.9 183.5 346.7 199.7 369 217 C370.6 218.2 372.2 219.5 373.8 220.7 C376.5 222.8 379.3 224.9 382 227 C382.6 227.4 383.1 227.9 383.7 228.3 C390.7 233.7 397.6 239.3 404.3 245 C407.8 248 411.3 250.8 414.8 253.7 C418.7 256.9 422.4 260.2 425.9 263.9 C427.7 265.7 429.6 267.4 431.6 269.1 C436.1 273 440.2 277.1 444.4 281.3 C445.2 282 446 282.8 446.7 283.6 C448.4 285.2 450 286.8 451.6 288.5 C454.1 290.9 456.5 293.4 459 295.8 C460.6 297.4 462.1 299 463.7 300.6 C464.4 301.3 465.2 302 465.9 302.8 C470.5 307.4 474.8 312.1 479 317 C480 318.2 481 319.3 482.1 320.5 C515 358.2 541.8 399.7 565 444 C565.5 445 566 445.9 566.5 446.9 C576.6 466.1 584.9 485.9 590 507 C590.1 507.4 590.1 507.4 590.6 509.5 C591.8 517.1 592.9 527.1 588.8 533.9 C586.3 537.3 583.6 538.7 579.6 539.4 C569.2 539.6 562.8 535.8 555.1 529.2 C554.5 528.7 554 528.2 553.4 527.7 C547.1 522.3 541.3 516.5 535.4 510.6 C533.6 508.8 531.8 507 529.9 505.1 C524.6 499.8 519.4 494.5 514.6 488.8 C511.6 485.4 508.3 482.2 505.1 478.9 C504.4 478.3 503.7 477.6 503 476.9 C499.1 473 495 469.2 490.8 465.6 C488.6 463.6 486.4 461.6 484.2 459.6 C478.9 454.9 473.5 450.4 468 446 C466.8 445 465.5 444 464.3 443 C455.7 435.9 447 429.1 438 422.5 C436.7 421.5 435.4 420.5 434 419.5 C414.9 405.3 394.7 391.8 374 380 C373.6 379.8 373.6 379.8 371.4 378.5 C303.9 339.6 229.3 311.8 154 292 C152.8 291.7 151.5 291.3 150.2 291 C146.5 290 142.8 289 139.1 288.1 C138.5 287.9 138.5 287.9 135.7 287.2 C134.6 286.9 133.6 286.6 132.5 286.3 C131.6 286.1 130.6 285.9 129.7 285.6 C120.9 283.6 108.9 281.8 100.2 285.6 C95.9 288.3 93.7 292.3 92.4 297.2 C87.1 331.7 99.9 372.5 108.4 405.8 C108.5 406.4 108.7 407.1 108.9 407.7 C115.3 433 123.4 457.8 131.9 482.5 C132.8 485.1 133.7 487.8 134.6 490.4 C135.7 493.7 136.8 497 137.9 500.2 C138.2 500.9 138.4 501.5 138.6 502.2 C140.8 508.7 143.1 515.2 145.4 521.6 C145.7 522.7 146.1 523.7 146.5 524.8 C147.1 526.7 147.8 528.5 148.5 530.4 C154.5 547.2 154.9 563.3 147.8 579.8 C141.8 591.8 131.7 601.3 122.6 611 C78.2 658.1 28.8 732.1 29.8 799.3 C30.6 809.4 33.6 818 41.1 824.9 C57.1 837.5 77.4 845.1 95.7 853.5 C109.4 859.8 122.9 866.4 136.3 873.5 C139.3 875.2 142.4 876.8 145.5 878.4 C167.2 889.9 188.1 902.4 208.7 915.5 C211.1 917 213.4 918.5 215.8 920 C241.8 936.3 266.3 954.1 290.5 973 C294.9 976.4 299.2 979.7 303.6 983.1 C320.8 996.2 337.2 1010.2 353 1025 C353.7 1025.7 354.4 1026.3 355.1 1027 C357.4 1029.1 359.6 1031.2 361.9 1033.3 C362.6 1034 363.3 1034.6 364 1035.3 C367.2 1038.3 370.4 1041.4 373.5 1044.5 C375.9 1046.9 378.3 1049.1 380.8 1051.3 C385.9 1055.7 390.7 1060.5 395.4 1065.2 C396.3 1066.1 397.2 1067 398.1 1067.9 C404.2 1074 409.7 1080.3 415 1087 C415.3 1087.4 415.3 1087.4 416.7 1089.2 C454.3 1136.5 454.3 1136.5 453 1155.5 C451.4 1161 451.4 1161 448 1163 C422.5 1168.7 381.2 1134.1 361.2 1121.5 C354.5 1117.3 347.9 1113 341.3 1108.5 C316.2 1091.5 289.6 1077.3 262.6 1063.4 C258.5 1061.3 254.4 1059.2 250.3 1057 C177.9 1018.7 100.8 987.9 -35 948 C-35.8 947.8 -36.7 947.5 -37.6 947.3 C-61.3 940.9 -85.3 935.6 -109.4 930.3 C-110.9 930 -112.5 929.6 -114.1 929.3 C-119.4 928.1 -124.6 927 -129.9 925.8 C-130.7 925.7 -131.4 925.5 -132.2 925.3 C-140.7 923.5 -149.2 921.7 -157.8 920.1 C-158.2 920.1 -158.2 920.1 -160.2 919.7 C-164.1 918.9 -168 918.2 -171.8 917.5 C-184 915.3 -196.8 912.7 -206 904 C-206.6 903.5 -207.1 903 -207.7 902.4 C-213.3 896.6 -216.1 889 -216.4 881 C-215.2 856.9 -196.2 834.4 -182.8 815.6 C-180.4 812.1 -178 808.7 -175.5 805.2 C-166.7 792.6 -157.9 780 -148.4 767.8 C-146.8 765.8 -145.2 763.7 -143.6 761.7 C-140.1 757.1 -136.6 752.6 -133 748 C-132.8 747.7 -132.8 747.7 -131.5 746.1 C-118.2 729.1 -104.6 712.4 -90.1 696.4 C-87.9 693.9 -85.8 691.3 -83.7 688.7 C-79.3 683.2 -74.6 678.1 -69.8 673 C-67.6 670.7 -65.5 668.4 -63.5 666 C-58.5 660.2 -53.2 654.6 -48 649 C-47.4 648.3 -46.8 647.7 -46.2 647 C-39.9 640.3 -33.6 633.5 -27 627 C-23.4 623.4 -20 619.8 -16.7 616 C-15.5 614.5 -14.2 613.2 -13 611.8 C-4.6 602.7 0.9 594.4 0.5 581.7 C-1.3 569.1 -10.1 558.9 -17.7 549.1 C-25 539.8 -31.6 530 -38 520 C-38.4 519.4 -38.8 518.7 -39.3 518 C-83.7 447.8 -110.1 364.9 -121 230 C-121 229.5 -121 229.5 -120.9 227.1 C-119.5 159.5 -112.8 46.7 -61 -3 C-43.1 -20 -18.4 -10.1 0 0 Z"/>
+<path transform="translate(1669 58)" d="M0 0 C49.8 44.5 55.8 152.1 59.6 214.2 C65.1 320.7 34.1 422.6 -42.2 545.4 C-46.6 551.8 -50.9 558.3 -55 565 C-55.3 565.6 -55.7 566.2 -56.1 566.8 C-61.4 575.6 -63.3 583.8 -62 594 C-59.5 601.7 -55 607.6 -49.4 613.5 C-47.5 615.5 -45.6 617.6 -43.7 619.8 C-39.9 624.2 -35.7 628.4 -31.5 632.5 C-26.7 637.2 -22.1 642 -17.7 647.1 C-15 650.2 -12.1 653.2 -9.2 656.2 C-8 657.6 -6.8 658.9 -5.6 660.2 C-5 660.8 -4.4 661.5 -3.8 662.1 C3.9 670.3 11.4 678.6 18.7 687.1 C23.7 693.1 28.8 699 34.2 704.7 C38.5 709.4 42.7 714.2 46.7 719.1 C48.8 721.8 51 724.4 53.3 726.9 C59.2 733.8 64.7 740.8 70.1 748.1 C72.8 751.7 75.6 755.3 78.4 758.9 C78.8 759.4 79.3 760 79.7 760.6 C81.7 763.1 83.7 765.6 85.7 768.1 C93.3 777.7 100.6 787.5 107.4 797.7 C110.5 802.3 113.7 806.7 116.8 811.2 C117.5 812.2 118.2 813.2 118.9 814.2 C122.1 818.9 125.4 823.6 128.8 828.2 C156.7 867.4 156.7 867.4 155 888 C153.3 897.8 148.4 904.9 140.3 910.7 C135.3 913.6 130.4 915.3 124.9 916.9 C124 917.2 123.2 917.5 122.3 917.7 C113.6 920.2 104.8 922 95.9 923.6 C90.9 924.5 85.9 925.5 80.9 926.5 C79.9 926.7 78.8 926.9 77.7 927.1 C-21.6 946.4 -119.7 974.7 -243 1027.1 C-245 1028 -247 1028.9 -249 1029.8 C-275.3 1041.4 -301.2 1054 -326.5 1067.6 C-331.3 1070.1 -336.1 1072.5 -340.9 1074.9 C-366.7 1087.5 -390.9 1103 -414.9 1118.7 C-423.9 1124.5 -432.9 1130.3 -442 1136 C-442.9 1136.6 -443.7 1137.1 -444.6 1137.7 C-494.9 1169.4 -494.9 1169.4 -509 1168.5 C-512 1167.8 -513.3 1166.5 -515 1164 C-517.2 1159.6 -516.5 1154.7 -515.2 1150.1 C-506.7 1126.5 -490.2 1104.8 -473.3 1086.5 C-471.4 1084.4 -469.6 1082.4 -467.8 1080.3 C-464.3 1076.3 -460.6 1072.5 -456.8 1068.7 C-456.2 1068 -455.5 1067.4 -454.8 1066.7 C-453.4 1065.3 -452.1 1063.9 -450.7 1062.5 C-448.6 1060.4 -446.5 1058.3 -444.4 1056.2 C-443 1054.9 -441.7 1053.5 -440.3 1052.2 C-439.7 1051.6 -439.1 1050.9 -438.5 1050.3 C-434.7 1046.6 -430.8 1043.1 -426.8 1039.6 C-425 1038 -423.2 1036.3 -421.5 1034.5 C-418.6 1031.5 -415.5 1028.8 -412.4 1026.1 C-410 1024 -407.7 1021.8 -405.4 1019.7 C-400 1014.7 -394.5 1009.9 -388.8 1005.3 C-386.3 1003.2 -383.8 1001.1 -381.3 999 C-375.5 994 -369.6 989.3 -363.6 984.7 C-361 982.7 -358.4 980.8 -355.8 978.8 C-345.1 970.3 -334.1 962.1 -323 954 C-322.3 953.5 -321.6 953 -320.9 952.5 C-263.2 910.6 -200.2 875.8 -135.3 846.4 C-132.8 845.3 -130.2 844.1 -127.7 843 C-125.9 842.2 -124.2 841.4 -122.4 840.6 C-115.4 837.4 -109.2 833.6 -103 829 C-102.5 828.7 -102.5 828.7 -100.2 827.1 C-93 820.3 -90.6 811.4 -90 801.8 C-90.3 738.7 -137.9 669.7 -176.9 623.8 C-179.9 620.4 -182.8 616.9 -185.6 613.3 C-188.5 609.7 -191.5 606.3 -194.6 602.9 C-206.3 590.1 -215 574.9 -214.3 557 C-212.5 540.2 -205.6 524.3 -199.7 508.6 C-177.1 448.5 -153.1 378.8 -152.8 314 C-152.7 313.2 -152.7 312.3 -152.7 311.5 C-152.6 304.3 -153.8 297.9 -158.2 292.1 C-165.6 286.5 -173.5 286.2 -182.5 287.3 C-185.1 287.8 -187.6 288.3 -190.2 288.9 C-191.2 289.2 -192.2 289.4 -193.2 289.6 C-279.4 309.7 -364.4 343.8 -440 390 C-441.1 390.6 -442.1 391.3 -443.2 391.9 C-462.9 404 -481.7 417 -500 431 C-501.2 431.9 -502.3 432.8 -503.5 433.7 C-519.1 445.5 -534 458.2 -548.3 471.5 C-549.6 472.6 -550.9 473.8 -552.2 474.9 C-558 480.2 -563.7 485.6 -569.2 491.2 C-570.1 492 -570.9 492.8 -571.7 493.7 C-574.4 496.3 -577 499 -579.6 501.6 C-583.1 505.1 -586.6 508.6 -590 512.1 C-590.4 512.5 -590.4 512.5 -592.4 514.5 C-597.1 519.2 -601.9 523.7 -607 528 C-607.5 528.5 -608.1 528.9 -608.6 529.4 C-614.4 534.4 -620.2 539.3 -627 543 C-627.4 543.2 -627.4 543.2 -629.4 544.3 C-635.2 545.8 -640.2 546.1 -645.4 543 C-650.5 537 -651.6 531.3 -651.3 523.5 C-647.5 484.2 -623.8 446.1 -604 413 C-603.8 412.6 -603.8 412.6 -602.7 410.8 C-587.7 385.8 -570.2 362.1 -551.5 339.8 C-549.4 337.3 -547.3 334.7 -545.2 332.1 C-541.6 327.7 -537.9 323.5 -534.1 319.3 C-532.3 317.3 -530.5 315.3 -528.7 313.2 C-519.8 303.1 -510.5 293.4 -501 283.9 C-499.2 282.1 -497.5 280.3 -495.7 278.6 C-490.5 273.4 -485.3 268.2 -479.6 263.4 C-477.8 261.9 -476.2 260.2 -474.5 258.5 C-470.8 254.8 -467 251.4 -463 248 C-462 247.1 -461 246.2 -460 245.3 C-451.7 238.1 -443.1 231.4 -434.4 224.8 C-431.8 222.9 -429.3 220.9 -426.7 219 C-417.5 211.9 -408.3 204.9 -398.7 198.2 C-396.9 196.9 -395 195.6 -393.2 194.3 C-364.7 173.8 -334.6 155.8 -304.4 138 C-301.6 136.4 -298.9 134.7 -296.1 133.1 C-283.8 125.8 -271.4 118.9 -259 112 C-257.9 111.4 -256.8 110.8 -255.7 110.2 C-240 101.4 -224.3 92.7 -208.5 84 C-204.2 81.7 -199.9 79.3 -195.6 76.9 C-193.1 75.5 -190.6 74.2 -188.2 72.8 C-187.6 72.5 -187 72.1 -186.4 71.8 C-178.1 67.3 -169.9 62.8 -161.6 58.3 C-153 53.6 -144.4 48.9 -135.8 44 C-118.5 34.2 -101 24.5 -83.4 15.1 C-77.4 11.9 -71.4 8.5 -65.5 5.1 C-44.5 -7.3 -21.7 -16.2 0 0 Z"/>
+<path transform="translate(594 799)" d="M0 0 C1.1 0.3 2.2 0.6 3.3 0.9 C65.8 17.9 120.9 51.7 166.5 97.3 C168.1 98.9 169.6 100.4 171.2 101.9 C177.6 108.3 183.4 114.9 189 122 C190.6 123.8 192.1 125.7 193.7 127.5 C221.9 161.4 260.9 217.5 257 264 C255.8 269.7 253 273.9 249 278 C243.7 281.3 237.9 280.9 232 280 C220.5 276.4 211 268.7 202 261 C200.9 260 199.7 259.1 198.6 258.1 C196.4 256.3 194.2 254.4 192 252.5 C187.7 248.9 183.4 245.4 179 242 C178.4 241.6 177.9 241.1 177.3 240.7 C139.6 211.5 96.9 190.4 52.9 172.7 C9.6 155.3 -33.1 133.6 -67 101 C-67.5 100.5 -68 100 -68.5 99.5 C-75.6 92.8 -82 85.7 -88 78 C-88.3 77.6 -88.3 77.6 -89.7 75.8 C-109.9 50 -109.9 50 -114 34 C-114.2 33.2 -114.5 32.4 -114.7 31.6 C-115.9 21.5 -114.9 12.6 -108.9 4.2 C-84.9 -24.1 -30.1 -8.1 0 0 Z"/>
+<path transform="translate(1384.2 799.922)" d="M0 0 C6.3 6.8 9.2 14.4 9 23.7 C6.7 50.7 -14.2 74.3 -32.2 93.1 C-32.7 93.6 -33.2 94.2 -33.8 94.7 C-40.8 102 -48.1 108.9 -56.2 115.1 C-56.5 115.3 -56.5 115.3 -58 116.4 C-71.7 127.2 -86.1 136.5 -101.3 145.1 C-102.3 145.6 -103.2 146.1 -104.1 146.7 C-122.3 156.8 -141.3 165 -160.5 173 C-188.3 184.6 -215.2 196.9 -241.2 212.1 C-242.8 213 -244.4 213.9 -246 214.8 C-265.7 226.2 -283.8 239.6 -301.1 254.4 C-328.4 277.5 -328.4 277.5 -343.3 278.5 C-348.8 277.9 -353.1 276.6 -356.8 272.2 C-359.1 268.6 -360.9 265.4 -361.2 261.1 C-361.2 260.8 -361.2 260.8 -361.4 259.2 C-363.7 217.6 -329.2 168.2 -305.2 137.1 C-304.7 136.4 -304.2 135.8 -303.7 135.1 C-285.4 111.3 -265.1 87.4 -241.2 69.1 C-240.2 68.2 -239.2 67.4 -238.2 66.5 C-219.9 51.2 -199.2 38.3 -178.2 27.1 C-177.3 26.6 -176.5 26.2 -175.6 25.7 C-138.6 6 -98.7 -5.1 -57.2 -9.9 C-56.1 -10.1 -54.9 -10.2 -53.8 -10.3 C-35.7 -12.1 -14.5 -12.7 0 0 Z"/>
+<path transform="translate(471.812 1198.81)" d="M0 0 C4.1 4.1 6.1 9.1 6.2 14.9 C5.4 28.8 -0.1 41.2 -5.6 53.8 C-21.3 89.8 -33.7 127.2 -40.1 166.1 C-40.2 167 -40.4 167.9 -40.5 168.9 C-43.2 186 -44.2 203.1 -44.2 220.4 C-44.2 220.9 -44.2 220.9 -44.2 223.5 C-44 320.1 -10.4 413.9 37.7 496.7 C39.1 499 40.4 501.2 41.7 503.5 C54.1 525.1 68.1 545.7 82.2 566.2 C82.8 567.1 83.4 568 84 568.9 C93 582 102.5 594.6 112.2 607.2 C112.7 607.9 113.2 608.6 113.8 609.3 C119.1 616.1 124.5 622.8 130.1 629.3 C133.4 633.2 136.5 637.1 139.6 641.1 C143.9 646.6 148.3 651.9 152.8 657.2 C155.8 660.6 158.8 664.1 161.6 667.6 C170.6 678.7 180 689.2 189.7 699.6 C192.1 702.2 194.5 704.8 196.9 707.4 C197.1 707.6 197.1 707.6 198.3 708.9 C201.8 712.8 205.3 716.7 208.9 720.6 C211.5 723.5 214.1 726.3 216.7 729.2 C222.3 735.3 227.8 741.4 233.3 747.5 C238.4 753.2 243.6 758.8 248.8 764.4 C252.2 768.1 255.6 771.7 258.9 775.4 C263.8 780.7 268.8 785.8 273.9 790.9 C276.6 793.6 279 796.4 281.5 799.3 C283.3 801.3 285.2 803.3 287.2 805.2 C290.3 808.2 293.2 811.4 296 814.7 C299 818.1 302.1 821.4 305.2 824.7 C309.3 829.1 313.5 833.6 317.4 838.2 C319.8 840.8 322.2 843.5 324.6 846.1 C325.5 847.1 326.5 848.1 327.4 849.2 C327.9 849.7 328.4 850.2 328.8 850.7 C334.7 857.2 340.4 863.7 345.9 870.5 C348.1 873.1 350.3 875.5 352.6 878 C356.6 882.4 360.3 887.1 364 891.8 C367.1 895.9 370.4 899.8 373.7 903.7 C377.9 908.6 382 913.7 386 918.8 C388.8 922.4 391.6 926 394.5 929.5 C399.2 935.4 403.8 941.3 408.3 947.5 C408.8 948.2 409.4 949 410 949.8 C416.2 958.6 422.2 967.5 428.2 976.5 C428.8 977.4 429.3 978.2 429.9 979.1 C442.1 997.4 453.8 1015.8 464.2 1035.2 C464.6 1036 465.1 1036.9 465.6 1037.8 C502.1 1106.2 528.8 1182.3 528.5 1260.7 C528.5 1261.7 528.5 1262.7 528.5 1263.7 C528.3 1331.8 508.6 1400.1 471.2 1457.2 C470.7 1457.9 470.3 1458.6 469.8 1459.3 C460.2 1473.9 449.4 1487.8 438.2 1501.2 C437.8 1501.7 437.3 1502.2 436.9 1502.8 C427.5 1514.1 417.5 1524.9 406.3 1534.4 C404 1536.3 401.8 1538.4 399.6 1540.5 C394.2 1545.5 388.7 1550.3 383 1554.9 C380.5 1556.9 378.2 1558.9 375.8 1561 C362.6 1572.5 347.8 1582 333 1591.2 C328.9 1593.8 324.8 1596.4 320.8 1599 C310.1 1606.1 299.2 1612.8 288.2 1619.2 C287.6 1619.5 287 1619.9 286.4 1620.3 C266.6 1631.9 244.3 1639.7 222.6 1646.9 C221.8 1647.2 221 1647.5 220.2 1647.7 C217.9 1648.5 215.7 1649.2 213.5 1649.9 C212.8 1650.1 212.1 1650.4 211.5 1650.6 C202.3 1653.5 189.6 1655.8 180.5 1651.6 C176.4 1648.9 173 1645.9 171.6 1641.1 C170 1631.9 174.1 1624.7 179 1617.1 C182.7 1612.1 186.7 1607.5 190.7 1602.8 C198.4 1594.1 205.7 1585.1 212.8 1576 C215.1 1573 217.4 1570.1 219.7 1567.2 C220.6 1566 221.5 1564.8 222.4 1563.7 C224.2 1561.4 226.1 1559.1 227.9 1556.8 C230.7 1553.3 233.4 1549.7 236.2 1546.2 C236.7 1545.5 237.2 1544.8 237.8 1544.2 C263 1511.9 282.6 1475.4 297.2 1437.2 C297.4 1436.6 297.4 1436.6 298.4 1433.9 C331.3 1347.1 337.1 1255.7 294.8 1117.7 C279.2 1083.2 260.1 1049.6 236.2 1020.2 C235.5 1019.3 234.7 1018.4 234 1017.4 C225.3 1006.8 216.4 996.3 207.2 986.2 C206.8 985.8 206.8 985.8 205 983.7 C198.5 976.5 191.8 969.7 185 962.9 C184.5 962.4 184.1 961.9 183.6 961.4 C178.5 956.4 173.4 951.4 168 946.7 C165.2 944.3 162.5 941.8 159.9 939.3 C154.2 934 148.3 929 142.2 924.2 C141.7 923.8 141.2 923.4 140.6 923 C132.1 916.2 123.5 909.5 114.8 902.8 C111.8 900.4 108.7 898 105.7 895.6 C93.2 885.9 80.5 876.6 67.5 867.5 C59.6 861.9 51.8 856.2 44.2 850.2 C35.3 843.3 26.4 836.5 17.3 829.8 C15.9 828.7 14.4 827.6 12.9 826.5 C-11.1 808.4 -11.1 808.4 -22.8 807.2 C-25.9 808 -27.4 808.7 -29.6 811.1 C-36.7 823.3 -30.1 843.6 -26.8 856.2 C-15.6 898.1 -1.9 939 14.2 979.2 C14.5 980 14.8 980.7 15.1 981.5 C23.5 1002.4 32.6 1022.9 42.3 1043.2 C45 1048.7 47.6 1054.3 50.1 1059.9 C60 1081.5 70.5 1102.8 82 1123.6 C85.2 1129.4 88.3 1135.2 91.2 1141.2 C96.5 1152 102.3 1162.6 108.2 1173.2 C108.8 1174.3 109.4 1175.4 110 1176.5 C110.4 1177.1 110.7 1177.7 111 1178.3 C112 1180.1 113 1181.9 114 1183.7 C115.3 1186 116.5 1188.3 117.8 1190.5 C129.9 1212.4 141.6 1234.6 152.8 1256.9 C154.1 1259.5 155.4 1262.1 156.7 1264.7 C182.7 1316.3 182.7 1316.3 178.5 1334.1 C176.7 1337 175.2 1338.4 172.2 1340.2 C163.8 1341.5 157.9 1337.8 151.2 1333.1 C142.2 1326.5 134.2 1318.9 126.2 1311.2 C125.4 1310.4 124.6 1309.6 123.7 1308.8 C120.7 1305.8 117.8 1302.7 115 1299.5 C111.1 1295 106.9 1290.8 102.7 1286.7 C101.2 1285.3 99.8 1283.8 98.3 1282.4 C97.7 1281.8 97.1 1281.2 96.4 1280.5 C94.5 1278.5 92.7 1276.5 90.9 1274.4 C87.3 1270.2 83.5 1266.3 79.5 1262.5 C79.2 1262.1 79.2 1262.1 77.4 1260.3 C75.2 1258.1 72.9 1255.9 70.7 1253.7 C67.7 1250.8 64.8 1247.8 61.8 1244.9 C61.2 1244.3 60.5 1243.6 59.8 1242.9 C56.7 1239.8 53.7 1236.6 50.8 1233.3 C46.7 1228.5 42.2 1224.1 37.8 1219.7 C36.9 1218.8 36 1218 35.1 1217.1 C32.3 1214.3 29.5 1211.5 26.7 1208.7 C23 1205 19.3 1201.3 15.6 1197.7 C14.8 1196.8 13.9 1196 13.1 1195.1 C8.8 1190.9 4.7 1186.5 0.7 1181.9 C-1.3 1179.6 -3.4 1177.5 -5.6 1175.3 C-6.5 1174.5 -7.3 1173.6 -8.2 1172.8 C-9.1 1171.9 -9.9 1171.1 -10.8 1170.2 C-20.4 1160.7 -20.4 1160.7 -24 1156.5 C-29.8 1149.7 -36.4 1143.5 -42.8 1137.2 C-58.4 1121.8 -58.4 1121.8 -63.5 1115.7 C-65.2 1113.7 -67 1112 -68.8 1110.2 C-71.3 1107.7 -73.7 1105.3 -75.9 1102.6 C-79.4 1098.6 -83 1094.7 -86.7 1090.8 C-95.2 1081.7 -103.5 1072.4 -111.6 1062.9 C-114.8 1059.1 -118.1 1055.4 -121.3 1051.7 C-122.9 1049.8 -124.6 1047.9 -126.2 1046 C-127.3 1044.8 -128.3 1043.6 -129.4 1042.4 C-136.3 1034.5 -142.9 1026.4 -149.3 1018.1 C-150.9 1016.1 -152.5 1014 -154.1 1012 C-162 1002 -169.6 991.8 -177.1 981.6 C-178.8 979.2 -180.5 976.9 -182.2 974.6 C-191.6 962.1 -200.3 949.3 -208.8 936.2 C-209.4 935.3 -210 934.3 -210.7 933.4 C-224.4 912.2 -236.9 890.4 -248.8 868.2 C-249.1 867.7 -249.1 867.7 -250.3 865.5 C-271.5 826 -289 784.6 -303.2 742.1 C-303.8 740.3 -304.4 738.4 -305 736.6 C-327.3 669.7 -340.1 597.6 -340 527.1 C-340 526.2 -340 525.4 -340 524.6 C-339.8 437.7 -318.7 351 -196.8 131.2 C-196.4 130.7 -195.9 130.1 -195.5 129.6 C-188.7 121.5 -181.6 113.6 -174.4 105.9 C-172.7 104.1 -171 102.2 -169.3 100.4 C-163.4 94 -157.6 87.8 -151 82.2 C-148.9 80.2 -146.9 78.3 -144.9 76.2 C-141.1 72.4 -137 69 -132.8 65.6 C-130.8 64 -128.7 62.2 -126.7 60.5 C-117.6 52.5 -108.1 45.2 -98.3 38 C-95.9 36.3 -93.6 34.5 -91.2 32.8 C-80.5 24.8 -69.4 17.8 -57.8 11.2 C-57.1 10.8 -56.3 10.3 -55.5 9.9 C-39.4 0.7 -17.6 -11.4 0 0 Z"/>
+<path transform="translate(1421 1219)" d="M0 0 C0.7 0.4 1.5 0.8 2.2 1.2 C14.7 8.2 26.1 17.8 37 27 C37.3 27.2 37.3 27.2 38.6 28.3 C52.9 40.3 67 52.8 79.2 66.9 C81.2 69.2 83.3 71.4 85.5 73.5 C88.9 76.8 92 80.3 95.1 83.8 C97.3 86.4 99.6 88.8 101.9 91.3 C105.9 95.7 109.8 100.3 113.5 104.9 C115.3 107.2 117.2 109.4 119 111.6 C154.3 154.2 184.1 205.7 202 258 C202.3 258.9 202.6 259.8 202.9 260.7 C212 287.5 217.7 315.9 221 344 C221.1 344.4 221.1 344.4 221.3 346.5 C222.3 355.5 222.2 364.6 222.2 373.6 C222.3 374.1 222.3 374.1 222.3 376.2 C222.2 390.7 221.5 404.8 219 419 C218.8 420 218.7 420.9 218.5 421.9 C208.7 477.5 183.3 529.1 147 572 C146.2 573 145.3 574 144.4 575.1 C137.5 583.3 130.2 591.1 122.6 598.6 C120.7 600.5 118.9 602.3 117.1 604.1 C111.2 610 105.3 615.6 99 621 C97.5 622.4 95.9 623.8 94.4 625.2 C88.8 630.3 82.9 634.9 77 639.4 C74.9 641.1 72.7 642.8 70.6 644.5 C62.1 651.1 53.6 657.6 44.8 663.7 C42.9 665.1 41 666.5 39.1 667.8 C23.8 678.8 8 688.9 -8.1 698.6 C-23.1 707.7 -37.9 717 -52.7 726.4 C-59.3 730.6 -65.9 734.7 -72.6 738.8 C-94.7 752.3 -116.2 766.4 -137.7 780.8 C-142.5 784 -147.3 787.2 -152.1 790.4 C-166 799.6 -179.7 808.9 -193 819 C-195 820.5 -197 822 -199 823.5 C-200.3 824.5 -201.6 825.5 -202.9 826.5 C-206.5 829.1 -210.1 831.8 -213.7 834.4 C-226.9 844 -239.8 854 -251.9 865 C-253.8 866.8 -255.7 868.5 -257.7 870.2 C-261.7 873.7 -265.5 877.3 -269.4 880.9 C-275.2 886.3 -281 891.7 -287 897 C-287.5 897.4 -288 897.8 -288.5 898.3 C-317.2 923.5 -317.2 923.5 -332 923.3 C-336.3 922.7 -339.1 920.1 -341.8 916.9 C-348 901.8 -339.8 884 -334 870 C-328 856 -321.3 842.4 -314 829 C-313.4 827.9 -312.9 826.9 -312.3 825.8 C-303 808.6 -293.2 791.8 -282.9 775.1 C-280.1 770.6 -277.4 766 -274.7 761.4 C-270.5 754.4 -266.2 747.5 -261.8 740.6 C-257.5 733.8 -253.3 726.9 -249.1 720.1 C-242.8 709.8 -236.4 699.7 -229.8 689.7 C-227.1 685.6 -224.5 681.6 -221.8 677.5 C-219.6 674.2 -217.4 670.9 -215.3 667.5 C-214.6 666.4 -213.8 665.3 -213.1 664.2 C-211.7 662.1 -210.4 660 -209 658 C-197 639.7 -185.2 621.3 -173.7 602.7 C-170.3 597 -166.7 591.4 -163.2 585.8 C-140.2 549.5 -118.8 512.4 -99.2 474.1 C-96.9 469.7 -94.5 465.2 -92.1 460.8 C-51.8 385.5 -25.9 300.7 -35.3 46.6 C-43 17.6 -43 17.6 -37 4 C-33.9 -1.3 -29.6 -4.1 -23.7 -5.6 C-15.5 -6.8 -7.1 -3.8 0 0 Z"/>
+<path transform="translate(1024.64 1248.95)" d="M0 0 C7.1 6.1 11.7 15.7 12.5 24.9 C13.1 38 7.5 49 1.4 60.1 C1 60.7 0.7 61.3 0.3 61.9 C-10.4 81.2 -24.5 98.3 -39.3 114.5 C-41 116.3 -42.6 118.2 -44.2 120 C-54.7 132 -67.7 143.9 -84.4 145.3 C-100.9 145.7 -112.9 139.4 -124.7 128.3 C-131.4 121.8 -137.7 115.1 -143.5 107.8 C-145.4 105.4 -147.4 103.1 -149.4 100.8 C-153.6 96.2 -157.3 91.4 -161 86.4 C-161.7 85.6 -162.3 84.7 -163 83.8 C-192.1 44.4 -192.1 44.4 -189.6 23.1 C-187.4 11.9 -181.6 3.2 -172.5 -3.5 C-128.4 -32 -42.1 -31 0 0 Z"/>
+<path transform="translate(2031 1958)" d="M0 0 C0.4 0.3 0.4 0.3 2.3 1.7 C12.6 9 22.5 16.7 32 25 C32.7 25.6 33.5 26.3 34.2 26.9 C36.2 28.6 38.1 30.3 40 32 C40.7 32.6 41.5 33.3 42.2 34 C51.3 42 60.2 50.5 68.1 59.8 C69.6 61.6 71.2 63.3 72.8 65.1 C91.5 86.2 107.4 109.4 121 134 C121.4 134.8 121.9 135.6 122.3 136.4 C151.9 189.7 166.1 246.6 172.8 306.8 C173 308.7 173.2 310.6 173.4 312.6 C181.9 387.8 166.4 464.2 141.7 535 C141.1 536.8 140.4 538.6 139.8 540.4 C133.9 557.4 126.5 573.6 118.9 589.9 C117.1 593.8 115.4 597.6 113.6 601.5 C99 633.5 82.7 664.7 59.9 691.8 C58.8 693.1 57.7 694.4 56.7 695.8 C52.1 701.8 45.2 706.5 38 709 C33.1 709.5 29.7 709 25.6 706.3 C20.3 701.9 19 695.4 18 689 C17.7 685 17.8 681.1 17.8 677.1 C17.8 676 17.8 674.9 17.8 673.8 C17.9 666.4 18.2 659.1 18.6 651.7 C20.7 615.3 15 578.1 -3 546 C-3.5 545 -4.1 544 -4.6 543 C-19.4 518.1 -46 502.5 -73.4 495.4 C-117.1 484.8 -161.4 497.4 -200.1 518 C-201.4 518.7 -202.7 519.3 -204 520 C-235.3 536.3 -263.7 558.3 -290.4 581.1 C-293.7 583.9 -297 586.6 -300.3 589.2 C-307.2 594.9 -313.6 601.1 -320.1 607.2 C-322.8 609.8 -325.6 612.3 -328.4 614.8 C-332.9 618.9 -337.2 623.1 -341.5 627.5 C-343.5 629.5 -345.5 631.4 -347.7 633.2 C-352.5 637.4 -357 641.9 -361.5 646.5 C-363.1 648.1 -364.7 649.8 -366.3 651.4 C-367 652.1 -367.8 652.8 -368.5 653.6 C-370.4 655.4 -372.4 657.2 -374.4 658.9 C-380.2 664 -385.6 669.5 -391.1 675 C-393.1 677 -395.1 679.1 -397.1 681.1 C-401.4 685.4 -405.7 689.7 -410 694 C-415 699 -419.9 704 -424.9 709 C-426.9 711 -428.9 712.9 -430.8 714.9 C-441.7 725.8 -441.7 725.8 -447.4 730.6 C-450.3 733.1 -452.9 735.8 -455.5 738.5 C-459.5 742.6 -463.6 746.5 -467.9 750.2 C-471.4 753.2 -474.7 756.4 -478 759.5 C-483.2 764.5 -488.5 769.3 -494 774 C-495.2 775 -496.4 776.1 -497.6 777.1 C-501.4 780.4 -505.2 783.7 -509 787 C-509.6 787.5 -510.2 788 -510.8 788.5 C-520.4 796.9 -530.1 805 -540 813 C-540.6 813.5 -541.3 814.1 -542 814.6 C-568.1 835.9 -595.7 855.6 -624 874 C-624.8 874.5 -625.5 875 -626.3 875.5 C-646.6 888.7 -667.3 901.2 -688.6 912.7 C-690.3 913.6 -692.1 914.6 -693.8 915.5 C-721.6 930.8 -749.8 944.5 -778.8 957.2 C-782.6 958.8 -786.3 960.5 -790.1 962.1 C-809.3 970.6 -829 977.9 -848.7 985.1 C-850.8 985.9 -853 986.7 -855.1 987.5 C-892.4 1001.3 -930.5 1012.3 -969 1022 C-969.5 1022.1 -969.5 1022.1 -971.8 1022.7 C-1068.2 1047 -1167 1061 -1276.4 1067.1 C-1277.1 1067.2 -1277.9 1067.2 -1278.6 1067.2 C-1306.8 1068.7 -1335.1 1069.2 -1363.3 1069.2 C-1364 1069.2 -1364.8 1069.2 -1365.5 1069.2 C-1394.4 1069.2 -1423.2 1068.5 -1452 1067 C-1453.2 1066.9 -1454.5 1066.9 -1455.8 1066.8 C-1544.7 1062.1 -1635.8 1054.5 -1768.1 1012.9 C-1772.1 1008.5 -1774.6 1005.5 -1774.5 999.2 C-1773.4 994.1 -1769.4 990.6 -1765.2 987.8 C-1751.6 980.8 -1733.6 980.1 -1718.7 978.6 C-1717.7 978.5 -1716.8 978.4 -1715.8 978.3 C-1699.3 976.5 -1682.9 975.1 -1666.4 973.9 C-1595.9 968.4 -1525.2 959.8 -1456 945 C-1455.2 944.8 -1454.4 944.7 -1453.6 944.5 C-1430.2 939.6 -1407.5 933 -1384.6 926.1 C-1369.5 921.5 -1354.3 917.4 -1338.9 913.6 C-1321.7 909.3 -1304.8 904.6 -1288 899 C-1286.7 898.6 -1285.4 898.1 -1284.1 897.7 C-1220.4 876.6 -1157.5 851.3 -1098.8 818.5 C-1095.8 816.9 -1092.8 815.3 -1089.8 813.7 C-1074.6 805.7 -1059.9 797.1 -1045.3 788 C-1042.3 786.2 -1039.3 784.3 -1036.3 782.5 C-1023.4 774.6 -1010.7 766.3 -998.1 757.9 C-997.3 757.3 -996.5 756.8 -995.7 756.2 C-984.6 748.9 -973.7 741.3 -962.9 733.4 C-960 731.3 -957 729.2 -954.1 727.1 C-940.8 717.6 -927.8 708 -915 698 C-913.4 696.8 -911.8 695.5 -910.2 694.3 C-899.3 686 -888.6 677.5 -878 668.8 C-873.6 665.3 -869.2 661.7 -864.7 658.2 C-858.7 653.6 -852.8 648.8 -847 644 C-845.2 642.5 -843.3 641 -841.5 639.5 C-840.6 638.8 -839.7 638 -838.7 637.2 C-837 635.8 -835.2 634.4 -833.5 632.9 C-830.6 630.6 -827.8 628.3 -825 626 C-824.7 625.7 -824.7 625.7 -823.1 624.4 C-815.2 617.9 -807.3 611.4 -799.5 604.8 C-795.4 601.3 -791.3 597.9 -787.1 594.5 C-783.2 591.4 -779.4 588.2 -775.5 585 C-769 579.7 -762.5 574.3 -756 569 C-755.2 568.3 -754.3 567.6 -753.4 566.9 C-746.7 561.4 -739.9 555.9 -733.2 550.4 C-730.4 548.2 -727.7 545.9 -724.9 543.7 C-716.9 537.1 -708.8 530.7 -700.7 524.3 C-698.4 522.6 -696.2 520.8 -694 519 C-681.3 509.1 -668.7 499.2 -655.9 489.5 C-654.5 488.4 -653.1 487.3 -651.7 486.2 C-640.3 477.5 -628.9 468.9 -617.2 460.6 C-615 459 -612.8 457.4 -610.7 455.8 C-598.9 447.3 -587 439.1 -575 431 C-574.1 430.4 -573.2 429.8 -572.3 429.2 C-559 420.2 -545.6 411.5 -532 403 C-531.1 402.4 -530.2 401.9 -529.3 401.3 C-450 351.6 -362.5 306.4 -253.6 285.7 C-252.9 285.6 -252.2 285.4 -251.4 285.3 C-230.4 281.7 -209.5 279.8 -188.1 279.8 C-187.3 279.8 -186.4 279.8 -185.5 279.8 C-169.2 279.8 -153.3 280.9 -137.1 282.8 C-136.5 282.9 -136.5 282.9 -133.6 283.3 C-131.4 283.5 -129.1 283.8 -126.9 284.1 C-110.8 286.2 -110.8 286.2 -104 282 C-102.4 278.8 -102.6 275.5 -103 272 C-105.1 266.3 -108.5 261.7 -112.5 257.2 C-113 256.7 -113.5 256.1 -114.1 255.4 C-122.7 245.8 -131.8 236.9 -142 229 C-143 228.2 -144 227.4 -145.1 226.6 C-165.2 210.8 -187.2 196.4 -209.7 184.2 C-212 183 -214.2 181.8 -216.4 180.6 C-239.6 167.9 -264.1 157.6 -289 149 C-290.4 148.5 -291.7 148 -293.1 147.6 C-315.5 139.8 -338.1 132.9 -361 127 C-362.3 126.7 -363.5 126.3 -364.8 126 C-418.9 112.2 -476.2 105.1 -532 104 C-532.9 104 -533.7 104 -534.6 103.9 C-541.1 103.8 -547.5 103.9 -554 104 C-554.7 104 -555.3 104 -556 104 C-606.2 104.7 -655.3 110.7 -704.7 119.3 C-750.7 127.2 -750.7 127.2 -762.1 119.6 C-766.4 116.1 -767.8 114 -768.4 108.4 C-768.2 98.4 -760.8 90.6 -754 84 C-744.7 75.4 -734.5 68.1 -724 61 C-723.3 60.5 -722.6 60.1 -721.9 59.6 C-703.9 47.5 -684.9 37.3 -665.7 27.4 C-662.5 25.8 -659.4 24.1 -656.3 22.4 C-652.2 20.3 -648.1 18.1 -644 16 C-642.9 15.4 -641.8 14.9 -640.7 14.3 C-580.9 -16.6 -516.2 -42.3 -451 -59 C-449.7 -59.3 -448.4 -59.7 -447.1 -60 C-367.2 -80.3 -285.1 -87.4 0 0 Z"/>
+  </g></symbol>
+  <symbol id="fox-large" viewBox="0 0 2240 3064"><g fill="currentColor">
+<path transform="translate(215 50)" d="M0 0 C3.7 0.3 6.4 1.6 9.5 3.4 C10.4 3.9 11.2 4.4 12.1 4.9 C12.5 5.2 12.5 5.2 14.8 6.6 C21.2 10.3 27.5 13.9 34.1 17.1 C40.8 20.3 47.1 23.9 53.5 27.7 C60.4 31.7 67.5 35.6 74.5 39.4 C81.4 43.1 88.3 47 95.1 50.9 C101.7 54.6 108.3 58.2 115.1 61.5 C118.9 63.5 122.6 65.7 126.2 67.9 C133.1 72 140.1 75.6 147.3 79.2 C156.8 83.8 165.9 89.1 175.1 94.3 C182.2 98.3 189.3 102.3 196.6 106.1 C212.1 114.2 227.5 122.6 242.7 131.6 C250.4 136.1 258.2 140.5 266.1 144.8 C274.3 149.4 282.5 154 290.6 159 C293.4 160.6 296.2 162.2 299 163.7 C305.8 167.4 312.3 171.3 318.8 175.3 C319.4 175.7 320 176.1 320.7 176.5 C328.5 181.2 336.2 186 343.9 191 C347.6 193.4 351.4 195.7 355.1 198.1 C374.2 210 392.2 223.3 410 237 C410.8 237.6 411.6 238.2 412.4 238.9 C422.5 246.6 432.4 254.5 442.2 262.6 C443.9 263.9 445.5 265.2 447.1 266.5 C453.2 271.5 459.2 276.7 465 282 C465.9 282.8 466.8 283.6 467.7 284.4 C476.7 292.6 485.4 301.2 494 309.8 C496.4 312.3 498.8 314.7 501.2 317.1 C502.8 318.6 504.3 320.2 505.9 321.8 C506.6 322.5 507.3 323.2 508.1 323.9 C512.6 328.4 516.8 333.1 521 338 C521.5 338.5 521.9 339.1 522.4 339.6 C529 347.3 535.4 355.2 541.6 363.2 C543 365 544.4 366.7 545.8 368.5 C551.4 375.5 556.6 382.7 561.5 390.2 C563.4 393.1 565.4 396 567.4 398.8 C571.1 404.1 574.6 409.5 578.1 414.9 C578.6 415.8 579.2 416.8 579.8 417.7 C586.8 428.6 592.6 440 598.5 451.5 C600.9 456.1 603.4 460.7 606.1 465.1 C609 469.8 611.3 474.6 613.4 479.6 C613.8 480.5 614.2 481.4 614.6 482.2 C615.4 484 616.1 485.8 616.9 487.5 C617.9 489.8 618.9 492 619.9 494.3 C623.4 502.1 626.5 509.9 629.4 517.9 C630.7 521.2 632 524.4 633.4 527.7 C636.1 534.1 638.4 540.6 640.6 547.2 C641 548.4 641.3 549.5 641.7 550.7 C644.7 559.7 647.1 568.7 649 578 C645 578 645 578 643.6 576.7 C643.4 576.4 643.4 576.4 642.3 574.9 C641.8 574.2 641.3 573.6 640.8 572.9 C640.3 572.2 639.8 571.4 639.3 570.7 C638.2 569.2 637.2 567.7 636.1 566.2 C635.6 565.5 635 564.8 634.5 564 C630.4 558.5 625.9 553.2 621.4 547.9 C620.5 546.8 619.5 545.8 618.6 544.7 C618.2 544.1 617.7 543.6 617.2 543.1 C613.4 538.5 609.7 533.8 606.1 529.1 C602.2 524.2 598.1 519.6 593.8 515.1 C592 513 592 513 592 511 C591 510.7 590 510.3 589 510 C587.5 508.5 587.5 508.5 585.9 506.6 C583.1 503.3 580.2 500 577.3 496.8 C576.6 495.9 575.9 495.1 575.1 494.3 C573.7 492.8 572.2 491.3 570.7 489.8 C569 488 569 488 569 486 C568 485.7 567 485.3 566 485 C563.3 482.6 563.3 482.6 561 480 C561 479.3 561 478.7 561 478 C560.7 477.9 560.7 477.9 559.3 477.3 C556.3 475.6 554.3 473.4 551.9 470.9 C547.2 466.1 547.2 466.1 545 465 C545 464.3 545 463.7 545 463 C544.5 462.8 543.9 462.6 543.4 462.3 C540.2 460.5 537.6 458.2 534.8 455.8 C533.6 454.7 532.3 453.6 531 452.5 C530.7 452.2 530.7 452.2 529 450.8 C517.7 441 506 431.8 494 423 C493 422.3 492.1 421.6 491 420.8 C488.4 418.9 485.7 416.9 483 415 C482.5 414.6 481.9 414.2 481.4 413.8 C469.8 405.5 458 397.6 445.9 389.9 C445 389.3 444.1 388.7 443.2 388.1 C437.8 384.6 432.2 381.4 426.6 378.4 C422.9 376.4 419.4 374.3 415.8 372.1 C408.5 367.8 401.1 363.9 393.4 360.2 C390.7 358.8 387.9 357.5 385.2 356.1 C360.7 344.1 335.6 333.3 310 324 C309 323.6 308 323.3 307 322.9 C292.6 317.6 278.1 312.7 263.6 307.8 C262.9 307.6 262.2 307.3 261.4 307.1 C257.1 305.6 252.7 304.2 248.4 302.8 C246.7 302.2 245.1 301.7 243.5 301.2 C228.2 296.1 212.7 291.9 197 287.9 C192.4 286.8 187.8 285.6 183.2 284.4 C182.1 284.1 181 283.8 179.8 283.5 C172.6 281.7 165.3 279.7 158.1 277.8 C150.5 275.7 142.9 273.7 135.2 272.1 C134.3 271.8 133.3 271.6 132.3 271.4 C131.3 271.2 130.4 271 129.5 270.8 C129 270.7 129 270.7 127 270.3 C125 270 125 270 123 271 C123.3 291.9 125 312.3 128 333 C128.2 334.2 128.3 335.4 128.5 336.7 C136.4 392.8 151.6 446.6 169.8 500.2 C170.1 501.4 170.5 502.6 171 503.8 C177.9 524.3 185.4 544.5 193.7 564.5 C198 575.1 198 575.1 198 580 C196.4 582.2 196.4 582.2 194.2 583.9 C193.8 584.2 193.8 584.2 192 585.7 C190 587 190 587 188 587 C188 587.7 188 588.3 188 589 C186.7 590.3 186.7 590.3 184.8 591.9 C173.8 601.3 163.4 611.1 154 622 C153.1 623 152.2 624 151.3 625.1 C135.1 643.6 121.7 663.9 109 685 C108.5 685.8 108.1 686.5 107.6 687.3 C86.1 723 72 761.9 65 803 C64.9 803.5 64.9 803.5 64.4 806 C63.3 812.6 62.6 819.1 62.4 825.8 C62.4 826.3 62.4 826.3 62.3 828.5 C62.1 833.3 62 838.2 62 843 C62.5 843.1 63.1 843.3 63.6 843.4 C71.8 845.7 79.6 848.9 87.4 852.1 C87.7 852.3 87.7 852.3 89.5 853 C101.1 857.7 112.6 862.7 124 868 C125.1 868.5 126.2 869 127.3 869.5 C136 873.6 144.7 877.7 153.3 882 C155.3 883.1 157.4 884.1 159.5 885.1 C166.1 888.4 172.6 891.8 178.9 895.7 C182 897.6 185.2 899.2 188.4 900.8 C214.2 913.5 214.2 913.5 223 919.6 C225.4 921.3 227.9 922.6 230.4 923.9 C235.1 926.4 239.3 929.2 243.5 932.3 C246.7 934.5 250 936.5 253.3 938.4 C275.4 951.5 296.6 966.3 317.1 981.8 C319 983.3 320.9 984.7 322.9 986.1 C329.1 990.8 335.2 995.5 341.3 1000.4 C344.9 1003.4 348.6 1006.3 352.3 1009.1 C363.6 1017.9 374.4 1027.4 385 1037 C394.7 1045.8 394.7 1045.8 398.3 1048.8 C401 1051 403.5 1053.4 406 1056 C407.5 1057.6 409.1 1059.1 410.6 1060.7 C411.4 1061.5 412.1 1062.2 412.9 1063 C415 1065 415 1065 418 1067 C418 1067.7 418 1068.3 418 1069 C418.3 1069.1 418.3 1069.1 419.6 1069.6 C423 1071.6 425.5 1074.2 428.2 1077 C428.8 1077.5 429.4 1078.1 429.9 1078.7 C434 1082.7 434 1082.7 434 1085 C434.6 1085.2 435.1 1085.4 435.7 1085.6 C438.3 1087.2 439.8 1089.1 441.7 1091.4 C444.1 1094.4 446.9 1097 449.6 1099.6 C451.1 1101 452.6 1102.5 454 1104 C454 1104.7 454 1105.3 454 1106 C454.7 1106 455.3 1106 456 1106 C457.4 1107.5 458.6 1109 459.9 1110.6 C463.5 1115.2 467.2 1119.6 471.1 1124.1 C476.7 1130.6 482.1 1137.3 487.5 1144.2 C488.4 1145.3 489.3 1146.5 490.2 1147.6 C490.6 1148.2 491.1 1148.8 491.6 1149.4 C494.6 1153.3 497.8 1157.2 500.9 1161 C506.5 1167.8 511.7 1174.7 516.6 1182 C518.3 1184.5 520.1 1187 521.9 1189.6 C523.3 1191.6 524.7 1193.6 526.1 1195.6 C526.7 1196.5 527.4 1197.5 528.1 1198.5 C528.8 1199.4 529.4 1200.3 530 1201.3 C530.3 1201.7 530.3 1201.7 531.8 1203.7 C533 1206 533 1206 533 1210 C531.7 1209.7 530.4 1209.3 529 1209 C529 1208.3 529 1207.7 529 1207 C528.4 1206.7 527.8 1206.5 527.2 1206.2 C525 1205 523.5 1203.8 521.7 1202.1 C521.1 1201.5 520.5 1200.9 519.9 1200.3 C519.2 1199.7 518.6 1199.1 517.9 1198.4 C512.7 1193.5 507.4 1188.8 501.8 1184.3 C499.2 1182.1 496.6 1180 494.1 1177.8 C486.4 1171 478.4 1164.8 470.2 1158.6 C468 1157 465.9 1155.4 463.7 1153.8 C457.3 1148.9 450.9 1144.1 444.3 1139.6 C442.7 1138.5 441.1 1137.3 439.5 1136.2 C434.9 1132.9 430.3 1130 425.3 1127.3 C421.9 1125.4 418.8 1123.1 415.6 1120.8 C412.1 1118.4 408.4 1116.1 404.8 1113.8 C402.1 1112 399.3 1110.2 396.6 1108.4 C380.6 1097.6 363.9 1088 347 1078.7 C344.2 1077.1 341.3 1075.5 338.5 1074 C336.8 1073 335.1 1072.1 333.4 1071.1 C333.1 1070.9 333.1 1070.9 331.2 1069.9 C325.7 1066.8 320 1064 314.4 1061.2 C309.5 1058.8 304.6 1056.3 299.8 1053.7 C282.6 1044.8 265.4 1036.3 247.6 1028.6 C243.9 1026.9 240.1 1025.2 236.4 1023.5 C208.2 1010.6 179.4 999.5 150.4 988.7 C147.6 987.6 144.8 986.5 142 985.5 C124 978.7 105.8 972.6 87.3 967 C82.7 965.5 78.1 964.1 73.5 962.6 C48.5 954.7 23.3 947.9 -2.2 941.7 C-5 941 -7.9 940.3 -10.8 939.5 C-22.8 936.4 -34.9 933.7 -47.1 931.3 C-55.2 929.6 -63.1 927.8 -71.1 925.9 C-89.2 921.4 -107.4 918.2 -125.9 915.5 C-131.2 914.7 -136.6 913.8 -142 913 C-143.1 912.8 -144.2 912.7 -145.3 912.5 C-148.6 912 -151.9 911.5 -155.2 910.9 C-156.3 910.8 -157.4 910.6 -158.6 910.4 C-159.1 910.3 -159.1 910.3 -161.8 909.9 C-162.3 909.8 -162.3 909.8 -164.7 909.4 C-167 909 -167 909 -169 908 C-169.6 904.3 -169 903 -166.9 899.9 C-166.4 899.3 -166 898.7 -165.5 898.1 C-163.8 895.7 -162.4 893.2 -161.1 890.6 C-158.8 886.4 -156.3 882.4 -153.6 878.4 C-151.8 875.7 -150.1 872.9 -148.4 870.1 C-141.4 858.6 -133.9 847.5 -126 836.7 C-120.6 829.3 -115.2 821.9 -110.2 814.2 C-101.3 800.9 -91.7 788.2 -81.5 775.9 C-73.4 765.9 -65.2 755.7 -58 745 C-57.3 745 -56.7 745 -56 745 C-55.8 744.5 -55.5 743.9 -55.3 743.3 C-53.7 740.4 -51.7 738.1 -49.6 735.5 C-45.1 730.2 -45.1 730.2 -43.3 727.7 C-42.9 727.1 -42.5 726.6 -42 726 C-41.3 726 -40.7 726 -40 726 C-39.8 725.4 -39.5 724.9 -39.3 724.3 C-37.7 721.4 -35.6 719.2 -33.3 716.8 C-30.3 713.5 -27.3 710.3 -24.4 706.9 C-21.9 704 -19.3 701.1 -16.6 698.2 C-13.5 694.7 -10.4 691.1 -7.5 687.4 C-3.9 683 -0.2 679 3.9 675.1 C5.8 673.2 7.6 671.2 9.3 669.2 C12.9 665 16.7 661.2 20.6 657.4 C23.4 654.6 26.1 651.8 28.6 648.8 C29.4 647.8 30.2 646.9 31 646 C31.7 646 32.3 646 33 646 C33.2 645.4 33.5 644.9 33.7 644.3 C35.3 641.5 37.1 639.7 39.3 637.5 C40.1 636.6 41 635.8 41.9 634.9 C42.8 634 43.7 633.1 44.6 632.2 C45.5 631.3 46.4 630.4 47.3 629.5 C51.8 625 56.5 620.6 61.3 616.5 C63.3 614.7 65.2 612.9 67.1 610.9 C74.2 603.7 74.2 603.7 78 601 C78.7 601 79.3 601 80 601 C77.6 595.1 73.6 591.1 69.1 586.5 C56 572.9 56 572.9 56 570 C55.3 570 54.7 570 54 570 C52.4 568.2 51 566.4 49.6 564.4 C49.1 563.9 48.7 563.3 48.2 562.7 C46.8 560.8 45.4 558.9 44 557 C43.5 556.4 43.1 555.8 42.6 555.1 C26.4 533.3 26.4 533.3 19.6 521.7 C18.4 519.6 17.1 517.5 15.8 515.5 C11.8 508.8 8 502.2 4.6 495.2 C3.1 492.1 1.5 489.1 -0.2 486.1 C-5.6 476 -10.4 465.6 -15 455 C-15.5 453.8 -16 452.7 -16.5 451.5 C-18.3 447.3 -19.8 443.1 -21.4 438.8 C-23.4 433.4 -25.4 428 -27.6 422.7 C-39.2 395.5 -45.8 365 -51 336 C-51.3 334.2 -51.7 332.4 -52 330.5 C-53.8 320.5 -55.4 310.5 -56.7 300.4 C-56.8 299.4 -56.9 298.5 -57 297.5 C-58.4 286.1 -59.2 274.8 -59.2 263.3 C-59.2 262.1 -59.2 261 -59.2 259.8 C-59.2 256 -59.2 252.2 -59.2 248.4 C-59.3 247.1 -59.3 245.9 -59.3 244.5 C-59.2 223.5 -58.5 202.8 -56 182 C-55.9 180.9 -55.8 179.9 -55.6 178.8 C-54.9 172.5 -54 166.2 -53 160 C-52.8 159.1 -52.7 158.1 -52.5 157.2 C-47 123.4 -39.3 90 -27 58 C-26.6 56.9 -26.2 55.9 -25.8 54.8 C-23.1 47.7 -20.2 40.8 -17 34 C-16.3 32.5 -15.6 30.9 -14.9 29.4 C-14.6 28.6 -14.3 27.9 -14 27.2 C-13.3 25.8 -12.7 24.3 -12.1 22.9 C-10 18.1 -7.7 13.3 -5.4 8.6 C-5.1 7.9 -4.8 7.3 -4.5 6.7 C-3.2 4.1 -2.1 2.1 0 0 Z"/>
+<path transform="translate(1654 49)" d="M0 0 C4 2.1 5.8 3.7 7.7 7.9 C7.9 8.3 7.9 8.3 9 10.8 C9.3 11.3 9.3 11.3 10.4 13.9 C10.7 14.4 10.7 14.4 11.9 17 C12.9 19.1 13.8 21.2 14.7 23.2 C15.8 25.5 16.8 27.7 17.8 29.8 C24 42.8 28.5 56.4 33.2 69.9 C34.3 73.2 35.5 76.4 36.7 79.6 C48.1 110.2 53.7 142.7 58 175 C58.1 175.5 58.1 175.5 58.5 178.3 C58.9 181.3 59.3 184.4 59.7 187.4 C59.7 187.9 59.7 187.9 60 190.1 C61.7 202.5 62.2 214.8 62.3 227.3 C62.3 228 62.3 228.8 62.3 229.6 C62.3 235.3 62.4 241.1 62.4 246.8 C62.4 247.7 62.4 248.5 62.4 249.4 C62.5 307.1 62.5 307.1 55 333 C54.5 335.6 54.1 338.2 53.6 340.8 C47.2 378.4 35 414.5 19 449 C18.6 450 18.1 450.9 17.7 451.9 C11.3 465.7 4.3 479 -3.3 492.1 C-5 495.1 -6.7 498.1 -8.4 501.1 C-14.3 511.6 -20.3 522 -27 532 C-27.7 533 -28.4 534 -29 535.1 C-30.4 537.1 -31.7 539.1 -33.1 541.1 C-34.3 543 -35.6 544.9 -36.9 546.8 C-47.5 563 -59 578.1 -71.5 592.9 C-72.1 593.7 -72.8 594.5 -73.4 595.3 C-74 595.9 -74.5 596.6 -75.1 597.2 C-76 599 -76 599 -75.9 601.1 C-74.9 603.3 -73.9 604.2 -71.9 605.6 C-71 606.4 -70 607.2 -69 608 C-69 608.7 -69 609.3 -69 610 C-68.4 610.3 -67.8 610.5 -67.2 610.8 C-64.9 612.1 -63.3 613.4 -61.4 615.3 C-60.7 615.9 -60 616.6 -59.3 617.2 C-58.6 617.9 -57.9 618.6 -57.2 619.2 C-55.8 620.6 -54.4 621.9 -53 623.2 C-52.4 623.8 -51.7 624.5 -51 625.1 C-49.1 626.9 -47 628.7 -45 630.4 C-44 631.2 -43 632.1 -42 633 C-42 633.7 -42 634.3 -42 635 C-41.4 635.2 -40.8 635.5 -40.2 635.8 C-37.7 637.2 -35.9 638.8 -34 641 C-34 641.7 -34 642.3 -34 643 C-32.7 643.7 -31.4 644.3 -30 645 C-30 645.7 -30 646.3 -30 647 C-29.7 647.1 -29.7 647.1 -28.2 647.8 C-25.8 649.1 -24.7 650.3 -23 652.4 C-19.4 656.6 -15.5 660.5 -11.5 664.4 C-8.1 667.8 -5 671.3 -1.8 674.9 C1.3 678.4 4.5 681.8 7.8 685.2 C13.1 690.8 18.2 696.5 23.2 702.5 C26.9 706.9 30.8 711.2 34.8 715.6 C43 724.6 43 724.6 43 727 C44 727.3 45 727.7 46 728 C47.9 730 47.9 730 50 732.8 C50.8 733.7 51.6 734.7 52.4 735.8 C52.6 736 52.6 736 53.7 737.4 C55.5 739.6 57.3 741.7 59.2 743.9 C63.7 749.1 67.9 754.5 71.9 760.1 C74.3 763.4 76.8 766.6 79.2 769.8 C79.7 770.3 80.2 770.9 80.7 771.5 C83.1 774.6 85.5 777.6 87.9 780.6 C98.6 793.8 108.5 807.5 117.8 821.7 C121.8 827.7 125.9 833.5 130.1 839.2 C136 847.3 141.7 855.5 147 864 C148.4 866.2 149.8 868.4 151.1 870.6 C152.7 873 154.2 875.5 155.8 877.9 C158 881.4 160.2 884.8 162.4 888.3 C162.9 889.1 163.5 890 164 890.9 C165.1 892.5 166.1 894.1 167.2 895.8 C171.9 903.2 171.9 903.2 173 907 C172.7 907.7 172.3 908.3 172 909 C169.6 909.6 167.3 910 164.9 910.4 C164.2 910.5 163.4 910.6 162.7 910.8 C161 911 159.3 911.3 157.7 911.6 C155 912 152.3 912.5 149.6 912.9 C140.9 914.4 132.3 915.8 123.6 917.2 C109.3 919.5 95.1 922.1 80.9 925.3 C76.8 926.3 72.6 927.1 68.4 928 C22.1 937.8 -23.7 949.3 -69 963 C-70.2 963.4 -71.4 963.7 -72.7 964.1 C-120.4 978.3 -167.5 995.7 -213.1 1015.7 C-217.5 1017.6 -221.9 1019.5 -226.3 1021.3 C-232.9 1024.1 -239.4 1027 -245.8 1030 C-248.9 1031.5 -252 1032.9 -255.1 1034.3 C-270.2 1041 -284.9 1048.5 -299.7 1056 C-300.7 1056.5 -301.6 1057 -302.7 1057.5 C-309.4 1061 -316.2 1064.5 -323 1068 C-324 1068.5 -325 1069 -326.1 1069.6 C-347.8 1080.8 -347.8 1080.8 -358.3 1087.1 C-358.8 1087.4 -358.8 1087.4 -361.3 1088.8 C-364.2 1090.5 -367.1 1092.3 -370 1094 C-370.9 1094.5 -371.7 1095 -372.6 1095.6 C-380.9 1100.5 -389 1105.6 -397 1111 C-400.5 1113.4 -404.2 1115.6 -407.9 1117.9 C-413.7 1121.5 -419.4 1125.3 -425 1129.4 C-429.6 1132.8 -434.4 1136 -439.2 1139.2 C-449.1 1145.7 -458.6 1152.8 -468 1160 C-468.3 1160.2 -468.3 1160.2 -469.8 1161.4 C-480 1169.1 -490 1177 -499.3 1185.8 C-503.7 1189.8 -508.3 1193.4 -513 1197 C-517.4 1200.4 -521.3 1204.2 -525.1 1208.3 C-527.1 1210.1 -528.4 1210.6 -531 1211 C-530.5 1206.2 -528.1 1202.8 -525.4 1198.9 C-524.5 1197.6 -523.6 1196.3 -522.7 1194.9 C-522.5 1194.6 -522.5 1194.6 -521.3 1192.9 C-519.5 1190.3 -517.8 1187.6 -516.1 1184.9 C-511.4 1178 -506.2 1171.5 -501 1165 C-499.6 1163.3 -498.3 1161.6 -496.9 1159.9 C-496.6 1159.5 -496.6 1159.5 -495 1157.6 C-492.7 1154.6 -490.4 1151.6 -488.1 1148.6 C-481.1 1139.5 -473.9 1130.8 -466.5 1122.2 C-462.4 1117.5 -458.6 1112.8 -454.7 1107.9 C-454.2 1107.3 -453.6 1106.7 -453 1106 C-452.3 1106 -451.7 1106 -451 1106 C-450.9 1105.7 -450.9 1105.7 -450.3 1104.3 C-448.8 1101.6 -447.1 1099.8 -445 1097.7 C-444.1 1096.9 -443.3 1096 -442.4 1095.2 C-441.5 1094.3 -440.6 1093.4 -439.7 1092.4 C-438.7 1091.5 -437.8 1090.6 -436.9 1089.6 C-434.9 1087.7 -432.9 1085.7 -430.9 1083.7 C-428.4 1081.2 -425.9 1078.7 -423.4 1076.2 C-421.4 1074.2 -419.5 1072.3 -417.5 1070.4 C-416.2 1069 -414.8 1067.6 -413.4 1066.2 C-409 1061.8 -404.5 1057.6 -399.7 1053.5 C-396.7 1050.9 -393.9 1048.2 -391 1045.5 C-386.7 1041.5 -382.4 1037.5 -377.9 1033.7 C-375.7 1031.7 -373.5 1029.7 -371.4 1027.8 C-366.3 1023.2 -361.1 1019 -355.7 1014.9 C-351.9 1011.9 -348.2 1008.9 -344.4 1005.9 C-337.7 1000.5 -330.9 995.2 -324 990 C-323.4 989.5 -322.8 989.1 -322.2 988.6 C-307.7 977.7 -293.2 966.9 -278 957 C-276.7 956.2 -275.4 955.3 -274.1 954.5 C-266 949.2 -257.8 944 -249.5 939 C-244.9 936.2 -240.4 933.4 -235.9 930.4 C-221.6 921.2 -206.7 912.9 -191.8 904.6 C-190 903.6 -188.2 902.5 -186.4 901.5 C-173.2 894.1 -159.7 887.4 -146 881 C-145.3 880.7 -144.7 880.4 -144 880.1 C-141.4 878.9 -138.8 877.6 -136.1 876.4 C-133.1 875 -130 873.6 -127 872.1 C-107 862.7 -86.8 853.6 -66 846.3 C-60.2 844.2 -60.2 844.2 -58 842 C-57.8 840.1 -57.8 840.1 -57.9 837.7 C-57.9 836.7 -57.9 835.8 -58 834.9 C-58 833.9 -58.1 833 -58.1 831.9 C-58.2 830.9 -58.2 829.9 -58.3 828.8 C-59.9 800.8 -67.7 774.4 -77 748 C-77.3 747.2 -77.6 746.3 -77.9 745.5 C-81.9 734.1 -87.1 723.6 -92.9 713 C-93.8 711.3 -94.7 709.6 -95.5 708 C-97.4 704.2 -99.4 700.6 -101.5 697 C-103.6 693.3 -105.7 689.7 -107.6 685.9 C-114.8 671.4 -124.8 657.5 -135 645 C-135.5 644.4 -136 643.8 -136.5 643.2 C-140.6 638.1 -144.8 633 -149 628 C-149.5 627.4 -150 626.8 -150.5 626.2 C-168.3 604.8 -168.3 604.8 -174 601 C-174 600.3 -174 599.7 -174 599 C-174.6 598.8 -175.1 598.5 -175.7 598.3 C-178.4 596.8 -180.1 595 -182.2 592.8 C-186.2 588.7 -190.3 585.2 -195 582 C-194.4 576.1 -192.7 571.2 -190.4 565.8 C-190.1 564.9 -189.7 564 -189.4 563.1 C-187 557.2 -184.5 551.4 -182 545.6 C-175 529 -168.8 512 -163 495 C-162.9 494.6 -162.9 494.6 -162.1 492.5 C-157.6 479.4 -153.6 466.2 -149.8 452.9 C-149.1 450.2 -148.3 447.6 -147.5 445 C-142.5 428.2 -138.8 411.1 -135 394 C-134.9 393.5 -134.9 393.5 -134.3 391 C-128.6 364.7 -124.8 337.7 -122.4 310.9 C-122.4 310.2 -122.3 309.5 -122.2 308.8 C-121.1 296.5 -120.4 284.3 -120 272 C-123.8 270.6 -126.5 271.4 -130.3 272.4 C-130.9 272.6 -131.6 272.7 -132.2 272.9 C-134.4 273.5 -136.5 274.1 -138.6 274.6 C-140.2 275 -141.7 275.4 -143.2 275.8 C-145.7 276.5 -148.2 277.2 -150.7 277.8 C-157.6 279.6 -164.5 281.4 -171.4 283.1 C-193.3 288.7 -214.9 294.6 -236.3 301.8 C-242.4 303.8 -248.4 305.6 -254.5 307.5 C-270.9 312.5 -287 318 -302.8 324.7 C-306.2 326.1 -309.6 327.5 -313 328.9 C-347.4 343.1 -347.4 343.1 -359.7 349.3 C-363.1 351 -366.5 352.7 -370 354.3 C-377.3 357.7 -384.4 361.2 -391.3 365.4 C-393.9 367 -396.6 368.3 -399.4 369.6 C-438.2 388.7 -474.3 415.1 -508 442 C-508.7 442.5 -509.3 443 -510 443.6 C-518.3 450.2 -526.4 457 -534.2 464.3 C-536.6 466.6 -539.1 468.9 -541.6 471.1 C-542.1 471.6 -542.7 472.2 -543.3 472.7 C-545 474 -545 474 -547.2 475 C-549 476 -549 476 -550 479 C-551.5 480.4 -551.5 480.4 -553.4 482 C-560.3 487.8 -566.8 494.2 -572.6 501.2 C-573.4 502.1 -574.2 503 -575 504 C-575.7 504 -576.3 504 -577 504 C-577.1 504.3 -577.1 504.3 -577.7 505.7 C-579.5 508.8 -582 511.1 -584.6 513.6 C-590.8 519.7 -596.6 526.1 -601.6 533.3 C-601.8 533.6 -601.8 533.6 -603 535 C-603.7 535 -604.3 535 -605 535 C-605.2 535.6 -605.5 536.1 -605.7 536.7 C-607.3 539.5 -609.3 541.6 -611.5 543.9 C-616.6 549.5 -621.2 555.3 -625.7 561.3 C-638.1 577.7 -638.1 577.7 -643 583 C-643.7 583 -644.3 583 -645 583 C-646.2 579.4 -645.8 578.8 -644.4 575.4 C-642.5 570.5 -641 565.6 -639.7 560.4 C-637.4 551.7 -634.2 543.4 -630.8 535.1 C-629.6 532 -628.4 528.9 -627.2 525.8 C-625.6 521.5 -623.8 517.2 -622 513 C-621.8 512.6 -621.8 512.6 -620.9 510.4 C-611.9 489.7 -602.7 469.4 -591.2 450 C-589.6 447.4 -588.2 444.7 -586.8 442.1 C-579.4 428.5 -571.4 415.4 -562.2 403 C-559.6 399.4 -557.1 395.8 -554.6 392.1 C-550.1 385.4 -545.3 379 -540.3 372.6 C-538.9 370.9 -537.6 369.2 -536.3 367.5 C-531.3 361.1 -526.2 354.8 -520.9 348.6 C-517.3 344.4 -513.9 340.1 -510.6 335.7 C-510 335.2 -509.5 334.6 -509 334 C-508.3 334 -507.7 334 -507 334 C-506.7 333.4 -506.5 332.8 -506.2 332.2 C-504.9 329.8 -503.4 328.2 -501.3 326.2 C-498.7 323.7 -496.2 321.1 -493.8 318.3 C-490.3 314.3 -486.6 310.5 -482.8 306.7 C-482.2 306 -481.5 305.4 -480.8 304.7 C-479.4 303.3 -478.1 301.9 -476.7 300.5 C-474.6 298.4 -472.5 296.3 -470.4 294.2 C-469 292.9 -467.7 291.5 -466.3 290.2 C-465.7 289.6 -465.1 288.9 -464.5 288.3 C-460.7 284.6 -456.8 281 -452.8 277.5 C-450.4 275.4 -448 273.3 -445.7 271.1 C-441.2 267 -436.6 263.2 -431.9 259.3 C-429.3 257.2 -426.8 255.1 -424.3 253 C-413.9 244.1 -403.1 236 -392 228 C-390.6 227 -389.2 226 -387.8 224.9 C-367 209.9 -345.8 195.6 -324 182 C-323.4 181.6 -322.8 181.2 -322.2 180.9 C-315.1 176.5 -308 172.2 -300.9 168.1 C-294 164.1 -287.3 159.9 -280.6 155.6 C-275.4 152.4 -270.2 149.4 -264.8 146.5 C-258.9 143.3 -253 139.9 -247.2 136.6 C-239.6 132.3 -239.6 132.3 -235.7 130.4 C-232.3 128.7 -229.1 126.7 -225.9 124.7 C-220.5 121.4 -215.2 118.5 -209.5 115.8 C-196.6 109.3 -184 102 -171.5 94.7 C-166.4 91.8 -161.3 89.1 -156 86.5 C-150.2 83.6 -144.7 80.4 -139.1 77.2 C-135.6 75.2 -132.2 73.3 -128.7 71.3 C-128.4 71.1 -128.4 71.1 -126.6 70.2 C-123 68.1 -119.3 66.1 -115.6 64.1 C-110.8 61.5 -106.2 58.8 -101.6 56 C-95.7 52.5 -89.8 49.3 -83.7 46.3 C-74.5 41.8 -65.6 36.5 -56.7 31.4 C-52.2 28.8 -47.8 26.3 -43.2 23.9 C-39.4 21.8 -35.7 19.7 -32 17.4 C-24.9 13.2 -17.7 9.2 -10.3 5.6 C-6.7 3.9 -3.3 2.1 0 0 Z"/>
+<path transform="translate(550 802)" d="M0 0 C0.4 0 0.4 0 2.5 0.2 C14.4 1.5 25.9 4.4 37.5 7.4 C38.2 7.6 39 7.8 39.7 8 C54.4 11.9 68.7 16.9 82.9 22.2 C84.5 22.8 86.2 23.4 87.8 24 C96.1 27.1 103.9 31.6 111.7 35.8 C113.7 36.8 115.7 37.9 117.7 38.9 C143.7 52.7 167.7 70.2 189.2 90.4 C191.5 92.6 193.9 94.6 196.3 96.6 C197.2 97.4 198.1 98.2 199 99 C199 99.7 199 100.3 199 101 C199.6 101.3 200.2 101.5 200.8 101.8 C207.3 105.3 212.2 112.4 217 118 C217.8 119 218.7 119.9 219.5 120.9 C226 128.4 232.1 136.1 238 144 C238.4 144.6 238.9 145.2 239.4 145.8 C248 157.2 256.2 168.8 262.3 181.7 C264 185 265.8 188.2 267.6 191.3 C275.7 205.6 282 220.2 287.2 235.8 C288 238.1 288.9 240.4 289.7 242.8 C304 282.5 304 282.5 304 296 C299.3 295.5 297.6 294 294.6 290.4 C293.9 289.6 293.2 288.8 292.5 287.9 C291.2 286.4 289.9 284.8 288.5 283.3 C283.7 277.6 278.5 272.3 273.2 267.1 C271.8 265.6 270.3 264.1 268.8 262.6 C263.3 257 257.6 251.9 251.4 247 C248.4 244.5 245.7 241.9 242.9 239.2 C231.5 228.6 218.8 219.8 206 211 C204.9 210.3 203.9 209.6 202.8 208.8 C197.7 205.4 192.6 202.1 187.2 199.2 C184.8 197.9 182.5 196.6 180.2 195.2 C157.4 182 134.4 171 109.8 161.4 C99.7 157.5 89.7 153.4 79.6 149.1 C77.3 148.1 75 147.2 72.7 146.2 C56.4 139.4 40.9 130.5 26 121 C24.9 120.3 23.8 119.6 22.7 118.9 C-17.5 93.9 -50.3 56.7 -68.5 12.9 C-68.8 12.2 -69 11.6 -69.3 11 C-70.6 7.6 -71.4 5.4 -70 2 C-47.6 -4.6 -22.9 -2.4 0 0 Z"/>
+<path transform="translate(1353.5 799.875)" d="M0 0 C8.3 -0.1 16.5 0.4 24.8 1 C25.9 1.1 27 1.2 28.2 1.2 C29.2 1.3 30.3 1.4 31.4 1.5 C32.3 1.6 33.2 1.6 34.2 1.7 C36.5 2.1 36.5 2.1 38.5 4.1 C38.2 10.2 36.6 15.2 34.2 20.8 C34.1 21.2 34.1 21.2 33.2 23.2 C23 46.2 8.1 67.2 -9.5 85.1 C-10.4 86 -11.2 86.9 -12.1 87.8 C-17.9 93.8 -24 99 -30.5 104.1 C-31.1 104.6 -31.7 105.1 -32.4 105.6 C-42 113.2 -51.8 120.2 -62.2 126.7 C-63.9 127.8 -65.7 128.9 -67.5 130 C-74.9 134.7 -82.5 138.7 -90.6 142.4 C-91.8 142.9 -93 143.5 -94.2 144 C-111.7 152 -129.4 159.5 -147.3 166.7 C-199 187.6 -246.7 215.3 -287.6 253.4 C-289.9 255.6 -292.3 257.7 -294.7 259.8 C-301.5 265.7 -307.8 272.2 -313.7 279.1 C-315.8 281.5 -318 283.8 -320.1 286.2 C-322.8 289.1 -325.2 292 -327.4 295.2 C-329.5 298.1 -329.5 298.1 -332.5 299.1 C-333.5 298.1 -333.5 298.1 -333.7 295.2 C-333.7 290.2 -332.2 285.7 -330.8 281 C-330.5 280.1 -330.2 279.1 -329.9 278.2 C-329.1 275.5 -328.3 272.8 -327.5 270.1 C-327.2 269 -326.8 267.8 -326.5 266.6 C-325.5 263.5 -324.5 260.3 -323.5 257.1 C-323 255.3 -322.4 253.5 -321.8 251.8 C-321.2 249.8 -320.6 247.8 -320 245.9 C-319.7 245 -319.4 244 -319.1 243.1 C-317.3 237.2 -315.1 231.7 -312.5 226.1 C-312.1 225.3 -311.7 224.4 -311.3 223.5 C-308.1 216.7 -304.8 209.9 -301.5 203.1 C-301.3 202.7 -301.3 202.7 -300.4 200.7 C-291.5 182.4 -280.6 165.5 -268.5 149.1 C-267.8 148.2 -267.2 147.3 -266.5 146.3 C-258 134.8 -249 123.7 -239.4 113.2 C-237.8 111.4 -236.3 109.7 -234.9 107.9 C-232.5 105.1 -230 102.9 -227.2 100.5 C-224.1 98 -221.4 95.1 -218.7 92.2 C-212.7 86 -206.2 80.8 -199.4 75.5 C-196.9 73.7 -194.5 71.7 -192 69.8 C-177.7 58.4 -162.5 48.9 -146.5 40.1 C-145.9 39.8 -145.2 39.4 -144.6 39.1 C-100.1 14.6 -50.8 1.8 0 0 Z"/>
+<path transform="translate(488 1188)" d="M0 0 C-1.7 5 -4.5 9 -7.3 13.4 C-20.9 34.5 -32.6 56.4 -42.1 79.7 C-42.7 81.2 -43.3 82.6 -43.9 84.1 C-54.2 108.9 -61.6 134.7 -67 161 C-67.1 161.5 -67.1 161.5 -67.6 164.1 C-81.8 235.2 -72.2 310.7 -49.7 379 C-49 381.1 -48.3 383.2 -47.6 385.3 C-41.3 404.6 -34.3 423.5 -26 442 C-25.5 443.1 -25 444.2 -24.5 445.3 C-18.5 458.7 -12.2 471.8 -5.2 484.7 C-4 487.1 -2.7 489.5 -1.5 492 C14.4 522.9 33.7 552 53.4 580.6 C54.9 582.9 56.4 585.1 58 587.4 C63 594.8 68.2 602.2 73.7 609.3 C75.2 611.2 76.6 613.1 78.1 615 C81.4 619.4 84.7 623.7 88 628 C88.5 628.6 89 629.3 89.5 629.9 C95 637 100.6 644 106.5 650.8 C109.9 654.7 113.2 658.7 116.4 662.8 C125.3 674.3 134.5 685.6 144.5 696.2 C148.5 700.7 152.2 705.3 156 710 C159.1 713.9 162.4 717.5 166 721 C170.5 725.4 174.9 729.9 179 734.7 C181.5 737.5 184 740.3 186.5 743 C190.1 747 193.7 750.9 197.3 755 C202.4 760.9 207.7 766.8 213.3 772.3 C217.2 776.2 220.7 780.4 224.1 784.7 C226.3 787.3 228.6 789.6 231 792 C239.5 800.4 239.5 800.4 243.2 804.8 C247 809.1 251.1 813.1 255.2 817.2 C258.8 820.7 262.2 824.4 265.4 828.2 C267.2 830.2 269.1 832.1 271 834 C274.2 837.2 277.3 840.5 280.3 844 C281.5 845.4 282.7 846.8 284 848.2 C284.3 848.6 284.3 848.6 285.9 850.4 C286.2 850.7 286.2 850.7 287.7 852.3 C289 854 289 854 289 856 C290 856.3 291 856.7 292 857 C293.4 858.4 293.4 858.4 294.9 860.2 C298.3 864.2 301.9 868.1 305.5 872 C311.6 878.5 317.5 885.1 323.1 892.1 C326.8 896.6 330.6 901.1 334.5 905.5 C339 910.6 343.4 915.8 347.6 921.1 C349.4 923.2 351.1 925.4 352.9 927.5 C361 937.4 368.7 947.5 376.4 957.8 C377.7 959.7 379.1 961.5 380.5 963.3 C391.8 978.2 402.4 993.6 412.3 1009.4 C413.9 1011.8 415.5 1014.2 417.1 1016.5 C419.8 1020.6 422.2 1024.9 424.5 1029.3 C425.9 1031.8 427.4 1034.1 429 1036.4 C431.8 1040.6 434.1 1044.9 436.3 1049.5 C437.9 1052.8 439.7 1056.1 441.4 1059.5 C447.2 1070.3 452.5 1081.3 457.7 1092.4 C459 1095 460.3 1097.6 461.6 1100.2 C463.7 1104.3 465.4 1108.4 466.9 1112.7 C468.8 1117.9 470.8 1123.1 473 1128.2 C476.5 1136.6 478.8 1145.4 481.2 1154.2 C482 1157 482.8 1159.9 483.6 1162.7 C486.4 1172.8 489.1 1182.8 491.5 1193 C491.9 1194.4 492.2 1195.8 492.5 1197.1 C495 1207.1 496.6 1217 497.6 1227.2 C498 1231 498 1231 498.5 1233.3 C500.8 1245.3 500.2 1258.1 500.2 1270.3 C500.2 1273.2 500.2 1276.1 500.2 1279.1 C500.3 1291.2 499.6 1303 498 1315 C497.9 1316 497.7 1317.1 497.6 1318.1 C497.3 1320.5 496.9 1322.9 496.6 1325.3 C496.5 1326.1 496.3 1326.8 496.2 1327.6 C494.4 1339.9 491.3 1351.9 488.1 1363.9 C488 1364.3 488 1364.3 487.6 1365.9 C484.1 1379 480.3 1391.6 474.5 1403.9 C473.1 1406.8 471.9 1409.7 470.7 1412.6 C466 1424 461 1435.4 454.4 1445.8 C452.8 1448.3 451.4 1450.9 450.1 1453.5 C447.1 1459 443.7 1464 440 1469 C439.1 1470.3 438.1 1471.7 437.2 1473 C430 1483.1 422.4 1492.8 414.5 1502.2 C412.7 1504.4 411 1506.7 409.2 1508.9 C400.5 1520 389.7 1529.8 379 1539 C377.5 1540.4 375.9 1541.8 374.4 1543.2 C368 1548.9 361.5 1554.5 355 1560 C354.1 1560.8 353.1 1561.6 352.2 1562.4 C341.3 1571.4 330 1579.6 318 1587 C315.8 1588.4 313.7 1589.7 311.5 1591.1 C309.1 1592.7 306.6 1594.2 304.1 1595.8 C300.8 1597.9 297.4 1600 294.1 1602.2 C272.6 1615.8 249.9 1627.2 226.5 1636.9 C225.5 1637.3 224.4 1637.7 223.4 1638.2 C214.2 1641.9 205 1645.5 195.7 1649 C192.8 1650.1 189.8 1651.2 186.8 1652.4 C172.7 1657.8 158.9 1662.4 144.1 1665.3 C141 1666 141 1666 138.3 1667.1 C135.5 1668.2 133.9 1667.8 131 1667 C132.4 1663.6 134 1662 136.9 1659.8 C150.6 1649.5 163.6 1638.3 176.1 1626.7 C179.8 1623.3 183.6 1619.9 187.3 1616.6 C193.3 1610.8 198.5 1604.2 203.8 1597.8 C207.6 1593.1 211.5 1588.4 215.4 1583.8 C220.5 1577.9 225.2 1571.9 229.8 1565.7 C231.1 1563.8 232.5 1562 233.9 1560.2 C249.9 1539.2 263.7 1516.7 275.1 1492.8 C276.1 1490.9 277 1489 278 1487 C285.1 1473.1 291.2 1459 296.2 1444.3 C297 1441.9 297.8 1439.6 298.7 1437.3 C305.8 1417.7 311.4 1397.9 315.5 1377.5 C315.9 1375.4 316.4 1373.3 316.8 1371.2 C320.6 1353.9 323.1 1335.8 323.8 1318.1 C324 1315 324 1315 324.5 1312.4 C325.1 1308.1 325.2 1303.9 325.2 1299.6 C325.2 1298.7 325.2 1297.8 325.2 1296.8 C325.2 1293.9 325.2 1290.9 325.2 1287.9 C325.3 1286.9 325.3 1285.9 325.3 1284.9 C325.2 1268 324.4 1251.7 322 1235 C321.9 1233.9 321.7 1232.8 321.5 1231.7 C319.6 1217.5 316.8 1203.8 313 1190 C312.8 1189.4 312.8 1189.4 312 1186.4 C311 1182.9 310 1179.4 309 1176 C308.5 1174.4 308.1 1172.8 307.6 1171.3 C304.5 1160.6 301.1 1150.3 297 1140 C296.7 1139.1 296.3 1138.3 296 1137.4 C295 1134.9 294 1132.5 293 1130 C292.5 1128.6 291.9 1127.3 291.4 1125.9 C290.8 1124.4 290.2 1122.9 289.6 1121.4 C289.3 1120.7 289 1120 288.7 1119.3 C286.9 1114.8 284.7 1110.5 282.3 1106.3 C281 1104.1 279.8 1101.8 278.7 1099.6 C273.1 1088.8 267.2 1078.3 261 1068 C260.6 1067.4 260.3 1066.8 259.9 1066.2 C255.3 1058.5 250.4 1051 245.2 1043.7 C244 1041.9 242.7 1040.2 241.5 1038.5 C237.1 1032.1 232.5 1025.9 227.5 1020 C225.6 1017.7 223.7 1015.4 221.9 1013.1 C216.3 1006.2 210.6 999.3 204.5 992.8 C203 991 203 991 203 989 C202 988.7 201 988.3 200 988 C198.7 986.6 198.7 986.6 197.2 984.8 C192.1 978.9 186.6 973.5 181.1 968 C179.2 966.1 177.4 964.2 175.5 962.4 C174.3 961.2 173.1 960 172 958.8 C171.4 958.3 170.8 957.7 170.3 957.1 C167.9 954.8 165.7 952.8 163 951 C163 950.3 163 949.7 163 949 C162.7 948.9 162.7 948.9 161.3 948.3 C158.3 946.6 155.9 944.3 153.4 941.9 C147.8 936.7 142 931.8 136 927 C134.7 926 133.4 924.9 132.2 923.9 C125.2 918.2 118.2 912.6 111 907.2 C107.6 904.7 104.3 902.1 100.9 899.4 C96 895.5 90.9 891.7 85.8 888 C82.7 885.8 79.6 883.4 76.6 881.1 C69.6 875.6 62.4 870.7 55 865.7 C46 859.5 37.4 853 29 845.9 C23.5 841.4 17.8 837.1 12 833 C-0.4 824.1 -12.7 815.1 -24.2 805.1 C-26.7 802.9 -29.2 800.9 -32 799 C-32 798.3 -32 797.7 -32 797 C-32.6 796.8 -33.1 796.5 -33.7 796.3 C-36.6 794.7 -38.7 792.7 -41.1 790.4 C-47.2 784.8 -53.5 779.5 -60 774.4 C-61.4 773.3 -62.7 772.2 -64 771 C-64 770.3 -64 769.7 -64 769 C-64.6 768.8 -65.2 768.5 -65.8 768.2 C-68.3 766.8 -69.9 765.1 -72 763 C-73 762.7 -74 762.3 -75 762 C-74.9 762.6 -74.7 763.1 -74.6 763.7 C-73 771 -72.4 778.3 -71.7 785.8 C-70.3 801.1 -67.7 816.1 -64.6 831.1 C-64.4 832.4 -64.1 833.7 -63.8 835 C-59.3 857.5 -53.4 879.5 -46.5 901.3 C-45.1 905.7 -43.7 910.2 -42.4 914.7 C-35.9 937 -28.1 958.6 -19.4 980.1 C-17.6 984.5 -15.8 989 -14.1 993.4 C-8.7 1007 -3.1 1020.5 2.8 1033.9 C3.1 1034.6 3.4 1035.3 3.7 1036 C7.3 1044.3 11.2 1052.4 15.2 1060.5 C17.6 1065.3 19.9 1070.1 22 1075 C25.4 1082.8 29.2 1090.5 33 1098.1 C34.2 1100.5 35.4 1102.9 36.6 1105.2 C43.5 1119.2 50.8 1133.1 58 1147 C58.5 1148 59 1149 59.6 1150 C64.3 1159.1 69.1 1168 74.2 1176.8 C75.8 1179.7 77.3 1182.6 78.8 1185.6 C81.5 1191.1 84.5 1196.4 87.6 1201.8 C96.5 1217.2 104.9 1232.9 113.2 1248.8 C116.7 1255.4 120.2 1262 123.8 1268.6 C124.3 1269.5 124.8 1270.5 125.4 1271.6 C128.3 1277 131.3 1282.2 134.5 1287.5 C139.3 1295.5 143.5 1303.8 147.8 1312.1 C151.1 1318.4 154.3 1324.6 157.6 1330.9 C164.9 1344.5 171.7 1358.4 178.1 1372.5 C180.5 1377.9 183 1383 186.1 1388 C187 1390 187 1390 187 1394 C180.2 1391 176.1 1384.2 171.8 1378.4 C167 1371.9 161.8 1365.8 156.5 1359.8 C154 1356.9 151.5 1353.9 149 1351 C148 1349.8 147 1348.7 146 1347.5 C143.9 1345.1 141.8 1342.6 139.7 1340.1 C139.4 1339.8 139.4 1339.8 138.1 1338.2 C137.1 1337 136 1335.8 135 1334.6 C133 1332.2 130.9 1329.9 128.7 1327.7 C127 1326 127 1326 127 1324 C126.3 1324 125.7 1324 125 1324 C123.6 1322.5 122.4 1320.9 121.1 1319.3 C117.5 1314.8 113.8 1310.5 109.9 1306.3 C106.1 1302.3 102.4 1298.2 98.7 1294 C96.6 1291.5 94.5 1289.1 92.3 1286.8 C91.9 1286.3 91.9 1286.3 90.1 1284.3 C88.7 1282.8 87.2 1281.3 85.7 1279.8 C84 1278 84 1278 84 1276 C83 1275.7 82 1275.3 81 1275 C79.5 1273.5 79.5 1273.5 77.9 1271.5 C73.7 1266.6 69.1 1262.1 64.5 1257.5 C59.3 1252.4 54.3 1247.3 49.6 1241.8 C47.2 1239.1 44.6 1236.5 42 1234 C38.9 1230.9 35.8 1227.9 33 1224.5 C28.7 1219.6 24.1 1214.9 19.4 1210.3 C17.8 1208.7 16.2 1207.2 14.6 1205.6 C11.3 1202.2 7.9 1198.9 4.5 1195.5 C0.6 1191.6 -3.3 1187.7 -7.3 1183.8 C-8.8 1182.3 -10.4 1180.7 -11.9 1179.2 C-16.6 1174.5 -21.1 1169.8 -25.4 1164.8 C-28.1 1161.7 -31.1 1158.8 -34 1155.9 C-35.3 1154.7 -36.6 1153.4 -37.9 1152.1 C-39.9 1150.1 -42 1148.1 -44 1146.1 C-46 1144.2 -47.9 1142.2 -49.9 1140.3 C-50.2 1140 -50.2 1140 -51.8 1138.4 C-53.2 1137 -54.6 1135.5 -56 1134 C-56 1133.3 -56 1132.7 -56 1132 C-56.6 1131.7 -57.2 1131.5 -57.8 1131.2 C-60.2 1129.9 -61.3 1128.7 -63 1126.6 C-66.2 1122.9 -69.5 1119.4 -73 1116 C-76.9 1112.2 -80.6 1108.3 -84.1 1104.1 C-85.7 1102.4 -87.3 1100.6 -88.9 1098.9 C-89.1 1098.6 -89.1 1098.6 -90.4 1097.3 C-91.4 1096.2 -92.4 1095.1 -93.4 1094 C-97 1090.2 -97 1090.2 -97 1088 C-98 1087.7 -99 1087.3 -100 1087 C-101.5 1085.5 -101.5 1085.5 -103.1 1083.6 C-105.8 1080.4 -108.6 1077.3 -111.4 1074.2 C-114.5 1070.7 -117.5 1067.2 -120.4 1063.6 C-123.5 1059.8 -126.7 1056.1 -130 1052.5 C-134.9 1047.2 -139.5 1041.6 -144 1036 C-145 1034.7 -146.1 1033.5 -147.1 1032.2 C-153.9 1023.9 -160.5 1015.5 -167 1007 C-167.8 1005.9 -168.6 1004.9 -169.5 1003.8 C-181.2 988.7 -192.4 973.1 -203.4 957.4 C-204.5 955.7 -205.6 954.1 -206.7 952.6 C-211 946.5 -215.1 940.3 -219 934 C-219.6 933 -220.2 932 -220.9 931 C-225.6 923.4 -230.2 915.7 -234.7 907.9 C-236.5 904.9 -238.2 901.9 -240.1 898.9 C-246.9 887.5 -253.2 875.9 -259 864 C-260 862.1 -260.9 860.2 -261.9 858.3 C-278.7 824.9 -278.7 824.9 -284.8 809.2 C-286 806.1 -287.3 803.1 -288.7 800.1 C-290.5 796.3 -291.9 792.4 -293.2 788.4 C-294.2 785.5 -295.3 782.8 -296.5 780 C-298.3 775.7 -299.9 771.5 -301.3 767.1 C-302.2 764.5 -303.2 761.9 -304.1 759.4 C-305.7 755 -307.2 750.6 -308.6 746.2 C-309.5 743.4 -310.5 740.6 -311.5 737.8 C-314.8 728.2 -317.4 718.6 -319.7 708.8 C-320.9 703.5 -322.2 698.3 -323.5 693.1 C-332.4 658.5 -338.4 623.3 -341.4 587.8 C-341.6 585.6 -341.8 583.4 -341.9 581.2 C-344.5 550.8 -344.4 521.2 -341.8 490.8 C-341.7 489.6 -341.6 488.4 -341.5 487.1 C-340 469.2 -337.5 451.7 -334 434 C-333.8 433.1 -333.7 432.2 -333.5 431.3 C-332.6 427 -331.8 422.6 -330.9 418.2 C-330.4 416.2 -330 414.2 -329.6 412.1 C-325.1 390.4 -319.3 369.2 -312.2 348.2 C-311.9 347.4 -311.7 346.6 -311.4 345.8 C-307.5 334.1 -303.4 322.6 -298.8 311.1 C-298 309.1 -297.3 307.1 -296.5 305.1 C-290 288.5 -282.5 272.6 -274 256.9 C-273.2 255.3 -272.4 253.8 -271.6 252.2 C-269.1 247.3 -266.4 242.6 -263.8 237.9 C-263.2 236.8 -262.6 235.8 -262 234.7 C-252.9 218.8 -243.6 203 -233 188 C-232.6 187.4 -232.2 186.9 -231.8 186.3 C-217.3 165.7 -201.7 146.3 -184.6 127.8 C-182.1 125.1 -179.7 122.4 -177.2 119.7 C-171.8 113.7 -166.2 108.1 -160 102.8 C-157.9 100.9 -155.9 99 -153.9 96.9 C-146.8 89.7 -146.8 89.7 -143 87 C-142.3 87 -141.7 87 -141 87 C-140.7 86 -140.3 85 -140 84 C-138.1 82.2 -138.1 82.2 -135.6 80.2 C-135.1 79.8 -135.1 79.8 -132.6 77.8 C-131.4 76.9 -130.2 75.9 -129 75 C-128.3 74.5 -127.6 73.9 -126.9 73.3 C-118.9 67 -110.8 60.7 -102.5 54.8 C-100.8 53.6 -99.2 52.4 -97.6 51.2 C-79.3 37.4 -58.6 25.4 -37.9 15.5 C-35 14 -32.1 12.4 -29.2 10.7 C-23.3 7.3 -17.5 4.1 -11.3 1.4 C-10.8 1.1 -10.8 1.1 -8 -0.1 C-4.8 -1.1 -3.1 -1 0 0 Z"/>
+<path transform="translate(1378 1202)" d="M0 0 C4.6 1.3 7.3 3 11 6 C12.6 7 14.2 8 15.8 8.9 C27.8 16.6 38.9 25.8 49.8 34.9 C54.3 38.6 58.8 42.2 63.4 45.8 C69.2 50.3 74.6 55.1 80 60 C81.4 61.3 82.8 62.5 84.2 63.8 C84.9 64.3 85.5 64.9 86.2 65.4 C87.9 66.9 89.7 68.4 91.5 69.8 C91.9 70.2 91.9 70.2 94 72 C94 72.7 94 73.3 94 74 C94.6 74.2 95.1 74.5 95.7 74.8 C98.4 76.2 100.1 77.9 102.2 80 C102.6 80.4 102.6 80.4 104.4 82.1 C106 84 106 84 106 86 C106.6 86.3 107.2 86.5 107.8 86.8 C110.2 88.1 111.3 89.3 113 91.4 C116.6 95.6 120.5 99.5 124.5 103.4 C131.1 109.9 136.9 117 142.8 124.2 C146.6 128.9 150.5 133.6 154.4 138.2 C160.2 144.8 165.1 151.7 170 159 C171.5 161.1 173 163.3 174.5 165.4 C178.1 170.6 181.5 175.8 184.8 181 C186.9 184.3 189 187.5 191.2 190.6 C194.1 194.9 196.3 199.4 198.5 204 C199.9 206.8 201.4 209.4 203 212 C205.7 216.5 208.1 221 210.4 225.7 C211.5 228 212.6 230.2 213.8 232.5 C249.9 302.2 265.9 388.7 243.6 465.1 C243 466.8 242.5 468.4 242 470 C241.6 471.3 241.2 472.6 240.8 473.9 C240.4 475.3 239.9 476.8 239.5 478.2 C239.3 478.9 239.1 479.5 238.9 480.2 C237.7 483.9 236.4 487.5 234.9 491.1 C233.8 493.4 232.9 495.7 231.9 498 C224.4 515.6 216.3 532.3 205.3 548.1 C203.9 550.1 202.5 552.2 201.2 554.4 C187.5 575.5 170.8 593.3 153.1 611 C152.6 611.5 152.1 612 151.6 612.5 C145.9 618.2 140.1 623.7 134 629 C132.5 630.4 130.9 631.8 129.4 633.2 C123.7 638.4 117.7 643 111.6 647.7 C109.4 649.5 107.2 651.3 105 653.1 C98.9 658 92.4 662.5 86 667 C85.6 667.3 85.6 667.3 83.3 668.9 C80.9 670.6 78.4 672.3 76 674 C75 674.7 74 675.4 73 676.1 C54.8 688.7 36.1 700.3 17.1 711.7 C11.5 715.1 5.9 718.5 0.3 721.9 C-4.5 725 -9.5 727.9 -14.4 730.9 C-18.7 733.6 -23 736.3 -27.4 738.9 C-32 741.8 -36.6 744.6 -41.2 747.3 C-57.1 756.8 -72.6 766.7 -88 777 C-94.7 781.5 -101.4 785.9 -108.2 790.2 C-112.2 792.8 -116.1 795.4 -120 798 C-122 799.3 -123.9 800.6 -125.9 801.9 C-138.1 810 -149.9 818.6 -161.3 827.7 C-167.4 832.5 -173.6 837.3 -179.9 841.9 C-188.6 848.3 -196.9 854.9 -205 862 C-205.7 862.6 -206.5 863.3 -207.2 863.9 C-210.1 866.4 -212.8 868.9 -215.6 871.4 C-216.5 872.2 -217.4 873 -218.3 873.9 C-219.1 874.6 -220 875.4 -220.8 876.2 C-223 878 -223 878 -226 879 C-226.3 880 -226.7 881 -227 882 C-228.5 883.5 -228.5 883.5 -230.4 885.1 C-240 893.2 -248.9 901.8 -257.8 910.6 C-259.7 912.6 -261.6 914.5 -263.6 916.4 C-269 921.9 -274.5 927.4 -279.5 933.3 C-282.2 936.4 -285 939.4 -287.9 942.4 C-294.5 949.5 -301.2 956.6 -307.4 964.1 C-310 967 -310 967 -313 968 C-313.4 964.1 -312.9 961.4 -311.2 957.9 C-309 953.1 -307.1 948.1 -305.1 943.2 C-302.5 936.6 -299.7 930.2 -296.4 923.8 C-294.8 920.7 -293.5 917.5 -292.1 914.2 C-286.6 901.2 -279.9 888.7 -273.2 876.2 C-271.5 873.1 -269.9 870 -268.3 866.9 C-267 864.5 -265.7 862.1 -264.5 859.7 C-262.8 856.6 -261.2 853.5 -259.6 850.3 C-252.6 837 -252.6 837 -248.3 831 C-247 829 -247 829 -245.6 826.2 C-243.8 822.6 -241.8 819.2 -239.7 815.8 C-237 811.4 -234.4 807 -232 802.4 C-229.1 796.9 -225.7 791.7 -222.3 786.5 C-217.9 779.7 -213.7 772.8 -209.5 765.9 C-200.7 751.5 -191.8 737.1 -182.4 723.1 C-178.9 717.8 -175.4 712.4 -172 707 C-168.4 701.4 -164.8 695.7 -161.1 690.2 C-156.7 683.5 -152.3 676.8 -148 670 C-146.7 668 -145.5 666 -144.2 664 C-142.1 660.8 -140 657.5 -137.9 654.2 C-134.3 648.7 -130.8 643.1 -127.2 637.6 C-119.4 625.5 -111.7 613.3 -104.2 600.9 C-101.8 596.9 -99.3 592.9 -96.8 588.9 C-89.6 577.4 -82.7 565.8 -76 554 C-75.5 553.1 -75 552.2 -74.5 551.3 C-61.4 528.5 -49 505.4 -37 482 C-36.5 481 -36 480 -35.5 479 C-28.9 466.2 -22.8 453.2 -17 440 C-16.6 439.1 -16.2 438.1 -15.8 437.2 C-3.3 408.7 7.3 379.6 15.9 349.7 C16.9 346.4 17.9 343.1 18.9 339.8 C43.3 258.1 47.2 166.7 26 84 C25.7 82.9 25.4 81.7 25.1 80.6 C18.8 55.9 10.8 31.8 1.2 8.2 C-0.6 3.4 -0.6 3.4 -1 1 C-0.7 0.7 -0.3 0.3 0 0 Z"/>
+<path transform="translate(939 1239)" d="M0 0 C0.7 0 1.5 0 2.3 0 C30 0.4 74.3 4.7 96 23.7 C96.3 24.1 96.7 24.6 97 25 C95.2 29.7 93.1 34.4 91 39 C90.5 40 90.1 41 89.6 42 C85 51.7 79.4 60.6 73.6 69.6 C72.1 71.9 70.6 74.3 69.1 76.6 C59.6 91.3 48.6 104.5 36.6 117.2 C32.6 121.4 28.9 125.8 25.1 130.2 C21.3 134.6 17.5 138.5 13.1 142.2 C11.5 143.5 10 145 8.5 146.4 C7.6 147.2 6.8 148 5.9 148.9 C5.1 149.6 4.3 150.4 3.5 151.2 C0.5 153.4 -1.3 154 -5 154 C-7.5 152.6 -7.5 152.6 -9.9 150.4 C-10.8 149.7 -11.7 148.9 -12.5 148.2 C-13.4 147.5 -14.2 146.7 -15 146 C-16.2 145 -17.5 144 -18.7 143 C-21.1 140.9 -23.2 138.7 -25.2 136.3 C-28.8 132.1 -32.6 128.2 -36.4 124.2 C-41.4 118.8 -46.3 113.4 -50.9 107.6 C-53.2 104.7 -55.6 101.9 -58 99.1 C-73.6 80.4 -86.5 60.4 -97.2 38.6 C-98.6 35.7 -100.1 32.9 -101.7 30.2 C-103 28 -103 28 -103.1 25.9 C-101.3 22.8 -98.2 21.6 -95 20 C-94.4 19.7 -93.8 19.4 -93.2 19.1 C-87.9 16.3 -82.5 14.3 -76.9 12.5 C-75.9 12.2 -75 11.9 -74.1 11.6 C-71.4 10.7 -68.7 9.9 -66 9 C-64.8 8.6 -63.5 8.2 -62.3 7.8 C-41.7 1.6 -21.4 -0.3 0 0 Z"/>
+<path transform="translate(1750.69 1888.62)" d="M0 0 C1.4 -0 2.7 -0 4.1 -0 C27 0 49.5 1.2 72.2 4.1 C74.2 4.4 76.3 4.6 78.3 4.8 C96.6 7 114.4 10.8 132.3 15.4 C133 15.5 133.6 15.7 134.3 15.9 C155.3 21.2 175.3 28.1 195.3 36.4 C196.4 36.8 197.5 37.3 198.7 37.8 C210.6 42.7 222.1 48.1 233.3 54.4 C235.1 55.4 237 56.3 238.8 57.3 C265.1 71.7 289.1 89.3 311.7 108.9 C312.8 110 314 111 315.2 112 C315.5 112.2 315.5 112.2 317.1 113.5 C317.6 114 318.2 114.5 318.8 115 C321.2 117.2 323.2 119.8 325.3 122.4 C327.8 124.9 330.3 127.4 332.9 129.9 C338.3 135.2 343.3 140.6 348.1 146.6 C350.4 149.4 352.7 152.2 355.1 154.9 C367.4 169.8 377.6 185.8 387.3 202.4 C387.8 203.2 388.2 204 388.7 204.8 C420.3 258.6 434.7 317.9 441.3 379.4 C441.4 380.6 441.6 381.8 441.7 383.1 C448.2 443.8 440.3 509.5 421.3 567.4 C420.9 568.8 420.4 570.1 420 571.5 C416.7 581.5 413.4 591.5 410 601.4 C409.4 603.1 408.8 604.9 408.2 606.6 C402.8 622.9 395.6 638.3 388.4 653.8 C386.1 658.6 384 663.3 381.8 668.1 C375.2 682.5 368.1 696.6 360.3 710.4 C359.6 711.7 358.9 712.9 358.2 714.2 C353.8 722 349.1 729.7 344.4 737.4 C342.2 741 339.9 744.6 337.7 748.2 C337.1 749.3 336.5 750.3 335.9 751.3 C334.7 753.2 333.5 755.2 332.3 757.1 C326.8 766.4 321 775.5 314.9 784.3 C310.9 790.1 306.9 795.9 303.1 801.8 C301.2 804.5 299.5 807 297.3 809.4 C296.3 809.4 295.3 809.4 294.3 809.4 C294.9 804.9 296.1 800.9 297.4 796.6 C315.3 738.7 322.3 669.9 293.2 614.5 C292.2 612.8 291.3 611.1 290.3 609.4 C289.8 608.4 289.2 607.5 288.7 606.5 C277.8 588.1 261.2 573.1 242.3 563.4 C241.2 562.8 240.1 562.2 239 561.7 C229.2 556.6 219.5 552.8 208.8 550.2 C208.1 550 207.4 549.9 206.7 549.7 C187.6 545.3 164.4 545.4 145.3 549.4 C144.7 549.5 144 549.6 143.3 549.8 C133 551.9 123.2 554.8 113.3 558.4 C112.1 558.8 111 559.2 109.8 559.6 C90.8 566.3 72.2 575.4 55.3 586.4 C54.3 587.1 53.2 587.7 52.2 588.4 C49.2 590.4 46.3 592.4 43.3 594.4 C41.3 595.7 39.4 597 37.4 598.3 C35.4 599.7 33.3 601 31.3 602.4 C30.3 603.1 29.2 603.8 28.2 604.5 C18.4 611.2 9.1 618.4 -0 625.9 C-0.7 626.5 -1.5 627.1 -2.2 627.7 C-3.6 628.9 -5 630.1 -6.4 631.2 C-7.1 631.8 -7.7 632.3 -8.4 632.8 C-9 633.3 -9.5 633.8 -10.1 634.2 C-11.7 635.4 -11.7 635.4 -14.7 636.4 C-14.7 637 -14.7 637.7 -14.7 638.4 C-16.4 639.9 -16.4 639.9 -18.9 641.8 C-30 650.5 -40.4 659.8 -50.6 669.5 C-54 672.7 -57.4 675.8 -60.8 678.9 C-66.1 683.8 -71.2 688.8 -76.3 694 C-79.1 696.9 -82 699.7 -85.1 702.3 C-90.7 707.2 -95.9 712.5 -101.2 717.9 C-103.1 719.8 -105 721.7 -106.9 723.6 C-112.4 729.1 -117.8 734.5 -123.2 740 C-126.5 743.3 -129.9 746.7 -133.2 750 C-134.5 751.3 -135.7 752.6 -137 753.8 C-138.7 755.6 -140.5 757.4 -142.3 759.2 C-142.8 759.7 -143.3 760.2 -143.8 760.8 C-147.5 764.4 -147.5 764.4 -149.7 764.4 C-150 765.4 -150.3 766.4 -150.7 767.4 C-152.1 768.8 -152.1 768.8 -154 770.3 C-157.7 773.5 -161.2 776.8 -164.7 780.3 C-164.9 780.5 -164.9 780.5 -166.3 781.9 C-167.9 783.6 -169.5 785.2 -171.2 786.9 C-184.6 800.4 -184.6 800.4 -191.7 806.4 C-192.3 806.9 -193 807.5 -193.6 808 C-194.7 809 -195.8 809.9 -196.9 810.8 C-199.3 812.9 -201.5 815.2 -203.7 817.4 C-211.6 825 -219.5 832.4 -228.1 839.3 C-230.9 841.5 -233.5 843.9 -236.2 846.4 C-240.6 850.4 -245.1 854.2 -249.7 858 C-253.1 860.7 -256.4 863.5 -259.7 866.4 C-274 878.7 -288.9 890.1 -304.4 900.9 C-309.1 904.2 -313.7 907.5 -318.2 910.9 C-325.9 916.6 -333.8 922 -341.7 927.4 C-342.3 927.8 -342.9 928.2 -343.5 928.6 C-361.5 940.9 -380 952.2 -399 962.9 C-401.8 964.5 -404.6 966.1 -407.4 967.7 C-424.6 977.4 -441.9 986.6 -459.7 995 C-463.3 996.7 -466.9 998.5 -470.4 1000.3 C-487 1008.8 -504.3 1016.6 -521.8 1023.1 C-525.5 1024.5 -529 1026 -532.6 1027.7 C-539.4 1030.8 -546.5 1033.4 -553.5 1036 C-555.8 1036.8 -558 1037.6 -560.3 1038.5 C-574.8 1043.8 -589.3 1049 -604 1053.9 C-605.2 1054.3 -606.3 1054.6 -607.5 1055 C-615.9 1057.8 -624.3 1060.4 -632.8 1062.9 C-636.2 1063.9 -639.7 1065 -643.2 1066.1 C-654.3 1069.6 -665.4 1072.6 -676.7 1075.2 C-682.6 1076.6 -688.5 1078.1 -694.3 1079.8 C-706.3 1083.3 -718.6 1085.8 -730.8 1088.5 C-734.3 1089.3 -737.9 1090.1 -741.4 1090.9 C-791 1101.9 -841.2 1109.9 -891.7 1115.4 C-893.4 1115.6 -895 1115.7 -896.7 1115.9 C-908 1117.2 -919.3 1118.3 -930.7 1119.4 C-931.4 1119.4 -932.2 1119.5 -932.9 1119.6 C-943.9 1120.6 -954.9 1121.4 -965.9 1122.2 C-968.8 1122.4 -971.7 1122.6 -974.6 1122.8 C-1049.3 1128 -1125 1127.2 -1199.7 1122.4 C-1202.1 1122.2 -1204.5 1122.1 -1206.9 1121.9 C-1236.6 1120 -1266.2 1117.3 -1295.7 1113.7 C-1298.8 1113.4 -1302 1113 -1305.1 1112.6 C-1354.4 1106.8 -1402.9 1098.4 -1451.3 1087.9 C-1453.5 1087.4 -1455.6 1087 -1457.8 1086.5 C-1471.8 1083.5 -1485.5 1079.8 -1499.2 1075.7 C-1508.6 1072.9 -1518.1 1070.4 -1527.6 1068.3 C-1528.1 1068.2 -1528.1 1068.2 -1530.4 1067.7 C-1530.8 1067.6 -1530.8 1067.6 -1532.9 1067.1 C-1533.5 1066.9 -1534.1 1066.6 -1534.7 1066.4 C-1534.9 1065.9 -1534.9 1065.9 -1535.7 1063.4 C-1533.1 1062.1 -1531 1062.2 -1528.1 1062.1 C-1526.9 1062.1 -1525.7 1062.1 -1524.5 1062 C-1523.2 1062 -1521.9 1062 -1520.5 1061.9 C-1519.2 1061.9 -1517.8 1061.9 -1516.4 1061.8 C-1513.4 1061.8 -1510.5 1061.7 -1507.5 1061.6 C-1482.1 1061 -1456.7 1060.1 -1431.2 1058.9 C-1430.6 1058.8 -1430.6 1058.8 -1427.5 1058.7 C-1413.8 1058 -1400.1 1057.1 -1386.4 1055.8 C-1381.6 1055.4 -1376.9 1055 -1372.1 1054.7 C-1350.9 1053.5 -1329.8 1050.9 -1308.7 1048.4 C-1308 1048.3 -1307.2 1048.2 -1306.5 1048.1 C-1287.7 1045.9 -1268.9 1043.1 -1250.1 1040.4 C-1249 1040.2 -1247.8 1040 -1246.6 1039.9 C-1231.6 1037.7 -1216.6 1035.2 -1201.7 1032.4 C-1200.1 1032.1 -1198.6 1031.8 -1197 1031.5 C-1192.7 1030.7 -1188.3 1029.8 -1183.9 1029 C-1183.2 1028.9 -1182.4 1028.7 -1181.6 1028.6 C-1168.7 1026 -1155.8 1023.2 -1143 1020.2 C-1139.4 1019.3 -1135.9 1018.5 -1132.4 1017.7 C-1091.2 1008.2 -1050.2 997.4 -1010.3 983.6 C-1006.4 982.3 -1002.5 981 -998.7 979.7 C-998 979.5 -997.3 979.3 -996.6 979 C-993.4 978 -990.2 976.9 -987 975.9 C-979.1 973.3 -971.4 970.4 -963.7 967.4 C-962.6 967 -961.6 966.6 -960.5 966.1 C-952.9 963.2 -945.3 960.2 -937.6 957.1 C-936.3 956.6 -935 956.1 -933.7 955.6 C-918.2 949.5 -902.8 943.4 -887.7 936.4 C-887 936.1 -886.4 935.8 -885.7 935.5 C-878 931.9 -870.3 928.2 -862.7 924.3 C-859.8 922.9 -856.8 921.5 -853.9 920.1 C-841.7 914.4 -829.8 908.4 -817.9 902.1 C-817.1 901.7 -816.4 901.3 -815.7 900.9 C-808.2 897 -800.9 893 -793.7 888.6 C-791.2 887.1 -788.6 885.8 -785.9 884.5 C-779.9 881.5 -774.2 878.1 -768.6 874.5 C-766.5 873.3 -764.5 872 -762.4 870.8 C-754.5 866 -746.7 861.1 -739 855.9 C-733 851.9 -726.9 848.1 -720.7 844.4 C-711.8 838.9 -703.4 833 -694.9 827 C-692 824.9 -689.1 822.8 -686.1 820.8 C-682.7 818.3 -679.2 815.8 -675.7 813.4 C-675 812.9 -674.4 812.5 -673.7 812 C-667.5 807.6 -661.2 803.1 -655.2 798.3 C-651.9 795.7 -648.5 793.2 -645.1 790.7 C-644.4 790.2 -643.8 789.7 -643 789.1 C-639.6 786.5 -636.1 784 -632.7 781.4 C-625.2 775.9 -617.9 770.2 -610.8 764.3 C-605.2 759.7 -599.4 755.3 -593.6 750.9 C-587.3 746.1 -581.1 741.2 -575 736.2 C-572.7 734.4 -572.7 734.4 -570.7 734.4 C-570.7 733.7 -570.7 733.1 -570.7 732.4 C-569.1 730.9 -569.1 730.9 -566.7 729.1 C-565.8 728.4 -564.9 727.6 -563.9 726.9 C-563.4 726.5 -562.9 726.1 -562.4 725.7 C-559.2 723.2 -556.1 720.6 -552.9 718.1 C-547.8 713.9 -542.6 709.7 -537.3 705.6 C-532.4 701.8 -527.7 697.8 -523.1 693.5 C-519.3 690.1 -515.3 686.9 -511.3 683.7 C-508 681 -504.8 678.3 -501.5 675.6 C-495.8 671 -490.1 666.3 -484.4 661.7 C-479.6 657.8 -474.8 653.8 -470.1 649.8 C-465.2 645.6 -460.2 641.6 -455.2 637.7 C-449.6 633.4 -444.2 628.9 -438.7 624.4 C-433.4 620 -428.1 615.7 -422.7 611.4 C-421.1 610.1 -419.5 608.8 -417.9 607.6 C-412.2 602.9 -406.4 598.4 -400.5 593.8 C-398.6 592.3 -396.7 590.8 -394.8 589.3 C-394.2 588.8 -393.6 588.3 -392.9 587.8 C-391.7 586.9 -390.5 585.9 -389.3 585 C-387.8 583.8 -386.2 582.6 -384.7 581.4 C-384.3 581.1 -384.3 581.1 -382.4 579.6 C-380.7 578.4 -380.7 578.4 -378.7 578.4 C-378.7 577.7 -378.7 577.1 -378.7 576.4 C-377 575.7 -375.4 575.1 -373.7 574.4 C-373.7 573.7 -373.7 573.1 -373.7 572.4 C-371.8 570.9 -371.8 570.9 -369.2 569 C-368.2 568.3 -367.2 567.6 -366.2 566.9 C-365.6 566.5 -365 566.1 -364.5 565.7 C-361.2 563.3 -357.9 560.8 -354.7 558.4 C-348.4 553.6 -342.1 549 -335.7 544.4 C-325.2 536.8 -325.2 536.8 -320.6 533.3 C-313 527.6 -305.1 522.3 -297.2 517.1 C-293.7 514.7 -290.2 512.3 -286.7 509.9 C-277.4 503.3 -267.8 497 -258.2 491 C-255.8 489.5 -253.5 487.9 -251.2 486.3 C-247.9 484.1 -244.6 482.2 -241.1 480.4 C-237.8 478.6 -234.7 476.7 -231.7 474.4 C-227.8 471.4 -223.7 469.2 -219.4 466.9 C-216.9 465.5 -214.6 464 -212.2 462.4 C-209 460.1 -205.7 458.3 -202.1 456.6 C-195.9 453.5 -189.9 450.1 -183.9 446.5 C-175.4 441.5 -166.9 436.7 -158 432.5 C-155.2 431.1 -152.4 429.8 -149.6 428.4 C-139.7 423.6 -129.8 418.9 -119.7 414.7 C-116.7 413.4 -113.8 411.9 -110.9 410.4 C-96.4 403.1 -81 397.8 -65.7 392.4 C-64.3 391.9 -62.9 391.4 -61.5 390.9 C-33.2 380.7 -4.3 372.5 25.3 367.4 C26.3 367.2 27.3 367 28.3 366.8 C71.8 359.3 118.2 357.6 161.3 368.4 C162.4 368.7 163.5 368.9 164.7 369.2 C189 375.3 189 375.3 200.3 380.4 C201.5 380.9 202.6 381.4 203.8 381.9 C216.9 387.7 229.8 394.5 240.4 404.1 C240.7 404.3 240.7 404.3 242.3 405.4 C243.3 405 244.3 404.7 245.3 404.4 C232.8 384.1 219.6 364.5 204.6 345.9 C204 345.3 203.5 344.6 202.9 343.9 C200.5 341 198.1 338.1 195.4 335.5 C193.3 333.4 193.3 333.4 193.3 331.4 C192.3 331 191.3 330.7 190.3 330.4 C188.8 328.9 188.8 328.9 187.2 326.9 C183.1 322 178.6 317.6 174.1 313.1 C173.7 312.7 173.7 312.7 171.7 310.6 C171 309.9 170.2 309.1 169.4 308.3 C169.1 308 169.1 308 167.3 306.2 C165.3 304.4 165.3 304.4 163.1 302.8 C162.5 302.3 161.9 301.8 161.3 301.4 C161.3 300.7 161.3 300.1 161.3 299.4 C160.7 299.1 160.2 298.8 159.6 298.6 C157.3 297.3 155.3 296.1 153.3 294.4 C153.3 293.7 153.3 293.1 153.3 292.4 C152.8 292.1 152.2 291.9 151.7 291.6 C148.8 290.1 146.3 288.2 143.8 286.2 C142.7 285.4 141.6 284.6 140.5 283.8 C139.4 283 138.4 282.2 137.3 281.4 C115.1 264.8 92.1 249.9 67.3 237.4 C65.8 236.6 64.4 235.9 62.9 235.1 C54.8 231 46.6 227.1 38.3 223.4 C37 222.8 35.7 222.2 34.3 221.5 C-9.9 201.3 -57.3 187.9 -104.7 177.4 C-105.8 177.1 -106.8 176.9 -107.9 176.7 C-145.6 168.5 -184.3 164.3 -222.7 161.4 C-224 161.3 -225.3 161.2 -226.6 161.1 C-238.5 160.2 -250.4 160.2 -262.2 160.2 C-263.3 160.3 -264.4 160.3 -265.5 160.3 C-272.9 160.3 -280.3 160.3 -287.7 160.4 C-288.5 160.4 -289.3 160.4 -290.1 160.4 C-349.8 160.9 -410 171.5 -467.7 186.4 C-468.7 186.6 -469.7 186.9 -470.7 187.1 C-474.7 188.2 -478.6 189.2 -482.6 190.3 C-485.4 191 -488.2 191.8 -491 192.4 C-497.8 194 -504.3 195.7 -510.7 198.6 C-512.7 199.4 -512.7 199.4 -516.7 199.4 C-516.3 196.6 -515.8 195.5 -513.8 193.5 C-513 192.9 -512.2 192.3 -511.3 191.6 C-510.4 190.9 -509.5 190.2 -508.5 189.5 C-504.5 186.5 -500.5 183.5 -496.4 180.6 C-494.4 179.2 -492.4 177.7 -490.3 176.2 C-488.8 175 -487.2 173.9 -485.6 172.8 C-484.9 172.2 -484.2 171.7 -483.4 171.1 C-478.8 167.8 -474.1 164.8 -469.3 161.9 C-464.8 159.2 -460.4 156.4 -456.1 153.6 C-441.7 144.4 -427.2 135.4 -412.6 126.6 C-411 125.6 -409.4 124.6 -407.8 123.6 C-402.7 120.5 -397.6 117.8 -392.3 115.2 C-387.8 113 -383.4 110.5 -379 108.1 C-364.1 99.9 -348.9 92.1 -333.7 84.4 C-332.8 83.9 -331.9 83.5 -331 83 C-314 74.5 -296.3 67.5 -278.8 60.3 C-276.9 59.5 -275 58.7 -273.1 57.9 C-209.6 31.6 -143.6 14.4 -75.7 4.4 C-74.4 4.2 -73.2 4 -71.9 3.8 C-48.1 0.5 -24 -0 0 0 Z"/>
+  </g></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-system" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M9 20h6M12 16v4"/></g></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></g></symbol>
+  <symbol id="i-new" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h8"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></g></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 4.5a2.1 2.1 0 0 1 3 3L8 19l-4 1 1-4Z"/><path d="M14.5 6.5l3 3"/></g></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.5h-4.5"/></g></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20h14"/></g></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></g></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+</svg>
+
+<div id="app">
+  <header>
+    <div class="brand"><svg class="mark" aria-hidden="true"><use href="#fox"/></svg><span class="word">vulpes</span></div>
+    <div class="model-pick disabled" id="modelPick" title="Which trained version of Vulpes answers">
+      <select id="modelSelect" aria-label="Model" disabled><option>connecting…</option></select>
+    </div>
+    <div id="model"></div>
+    <button id="newBtn" class="icon-btn" type="button" disabled title="New chat" aria-label="New chat"><svg class="icon" aria-hidden="true"><use href="#i-new"/></svg></button>
+    <button id="saveBtn" class="icon-btn" type="button" disabled title="Save this chat to data/chats/, to correct by hand and train on" aria-label="Save chat for training"><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg></button>
+    <button id="settingsBtn" class="icon-btn" type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg></button>
+    <button id="themeBtn" class="icon-btn" type="button" title="Switch to dark" aria-label="Switch between light and dark"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg></button>
+  </header>
+
+  <div class="column"><div id="banner" class="banner" role="status" hidden></div></div>
+
+  <main id="main">
+    <section id="hero" class="column">
+      <svg class="hero-fox" aria-hidden="true"><use href="#fox-large"/></svg>
+      <h1>What shall we learn today?</h1>
+      <p class="sub">Vulpes 0.1 is a small language model, built from scratch and still learning.</p>
+      <div id="heroSlot">
+        <form id="composer">
+          <div id="editBar" class="edit-bar" hidden>
+            <svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg><span>Editing your last message. Sending it replaces the reply.</span>
+            <button id="cancelEditBtn" type="button">Cancel</button>
+          </div>
+          <textarea id="input" rows="1" placeholder="Ask Vulpes anything" autocomplete="off" aria-label="Message"></textarea>
+          <div class="composer-row">
+            <span class="hint" id="hint">Enter to send · Shift+Enter for a new line</span>
+            <span class="meter" id="meter" role="img" hidden>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><circle class="track" cx="10" cy="10" r="8"/><circle class="fill" id="meterFill" cx="10" cy="10" r="8" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 10 10)"/></svg>
+              <span id="meterText"></span>
+            </span>
+            <button id="sendBtn" type="submit" aria-label="Send" title="Send" disabled><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
+          </div>
+        </form>
+        <p class="disclaimer" id="disclaimer">Vulpes is small and can be wrong. Check anything that matters.</p>
+      </div>
+      <div class="chips" id="chips"></div>
+    </section>
+    <div id="log" class="column" aria-label="Conversation"></div>
+  </main>
+
+  <footer id="dock">
+    <button id="jump" type="button" hidden title="Jump to the latest" aria-label="Jump to the latest message"><svg class="icon" aria-hidden="true"><use href="#i-down"/></svg></button>
+    <div class="column" id="dockSlot"></div>
+  </footer>
+</div>
+
+<div id="toasts" role="status" aria-live="polite"></div>
+<div id="announce" class="sr-only" role="status" aria-live="polite"></div>
+
+<div id="scrim"></div>
+<aside id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" inert>
+  <h2><span id="drawerTitle">Settings</span> <button id="closeBtn" class="icon-btn" type="button" aria-label="Close settings"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></h2>
+
+  <h3 id="themeLabel">Appearance</h3>
+  <div class="seg" role="radiogroup" aria-labelledby="themeLabel">
+    <label><input type="radio" name="theme" value="system"><span><svg class="icon" aria-hidden="true"><use href="#i-system"/></svg>System</span></label>
+    <label><input type="radio" name="theme" value="light"><span><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg>Light</span></label>
+    <label><input type="radio" name="theme" value="dark"><span><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg>Dark</span></label>
+  </div>
+
+  <h3>Instructions</h3>
+  <label class="field"><span>System message</span>
+    <textarea id="system" rows="3" placeholder="Optional, e.g. Answer in one or two sentences."></textarea>
+    <small>Sent before the conversation, to tell Vulpes how to answer.</small></label>
+
+  <h3>How Vulpes picks its words</h3>
+  <label class="field"><span>Temperature <b id="temperatureVal"></b></span><input id="temperature" type="range" min="0" max="1.5" step="0.05" value="0.7">
+    <small>Lower is more focused and predictable; higher is more varied, and more often wrong. 0 always picks the likeliest word.</small></label>
+  <label class="field"><span>Reply length <b id="max_new_tokensVal"></b></span><input id="max_new_tokens" type="range" min="16" max="512" step="16" value="256">
+    <small>The most tokens a reply may use (a token is about ¾ of a word).</small></label>
+  <label class="field"><span>Top-p <b id="top_pVal"></b></span><input id="top_p" type="range" min="0.5" max="1" step="0.01" value="0.95">
+    <small>Only the likeliest words that together reach this probability can be picked.</small></label>
+  <label class="field"><span>Top-k <b id="top_kVal"></b></span><input id="top_k" type="range" min="0" max="200" step="5" value="50">
+    <small>Only this many of the likeliest words can be picked. 0 turns the limit off.</small></label>
+  <label class="field"><span>Repetition penalty <b id="repetition_penaltyVal"></b></span><input id="repetition_penalty" type="range" min="1" max="1.5" step="0.01" value="1.1">
+    <small>Makes words it has already used less likely. Small models easily repeat themselves.</small></label>
+  <button id="resetBtn" class="reset" type="button" disabled>Reset to defaults</button>
+
+  <h3>This model</h3>
+  <dl class="facts" id="facts"><dt>Status</dt><dd>connecting…</dd></dl>
+
+  <h3>Keyboard</h3>
+  <p class="keys"><kbd>Enter</kbd> send · <kbd>Shift</kbd> <kbd>Enter</kbd> new line<br><kbd>↑</kbd> in an empty box: edit your last message<br><kbd>Esc</kbd> stop the reply, or close this panel</p>
+</aside>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const SLIDERS = ["temperature", "max_new_tokens", "top_p", "top_k", "repetition_penalty"];
+const SUGGESTIONS = ["What is a prime number?", "Why is the sky blue?", "Give me three tips for learning to read.", "Explain the water cycle simply."];
+const state = {
+  messages: [],      // {role, content} and, on Vulpes's replies, meta: {model, tokens, tps, finish, used, window, dropped}
+  busy: false,       // a reply is being written
+  switching: false,  // a model is loading
+  online: null,      // null until the server first answers, then true or false
+  editing: null,     // {draft}: the last question is back in the box; draft is what was in the box before
+  controller: null,
+  info: null,
+};
+
+const store = {  // per-browser convenience only; the page works without it
+  get(key) { try { return JSON.parse(localStorage.getItem("vulpes." + key)); } catch { return null; } },
+  set(key, value) { try { localStorage.setItem("vulpes." + key, JSON.stringify(value)); } catch {} },
+};
+
+// Everything on the page is built with these: strings always become text nodes, never markup,
+// so nothing the model (or a saved chat) says can inject HTML.
+function el(tag, cls, ...children) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  node.append(...children);
+  return node;
+}
+function svgUse(id, cls) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", cls);
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", "#" + id);
+  svg.appendChild(use);
+  return svg;
+}
+const icon = (name) => svgUse("i-" + name, "icon");
+function button(cls, iconName, label, onClick) {
+  const b = el("button", cls, ...(iconName ? [icon(iconName)] : []), label);
+  b.type = "button";
+  b.addEventListener("click", onClick);
+  return b;
+}
+const count = (n) => Number(n).toLocaleString("en-US");
+const lastIndex = (role) => state.messages.findLastIndex((m) => m.role === role);
+
+// ---------------------------------------------------------------- theme: the system's, unless one was chosen
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+let themeChoice = store.get("theme");  // "light", "dark", or anything else: follow the system
+function applyTheme() {
+  const chosen = themeChoice === "light" || themeChoice === "dark";
+  const theme = chosen ? themeChoice : (systemDark.matches ? "dark" : "light");
+  document.documentElement.dataset.theme = theme;
+  $("themeBtn").replaceChildren(icon(theme === "dark" ? "sun" : "moon"));
+  $("themeBtn").title = theme === "dark" ? "Switch to light" : "Switch to dark";
+  for (const radio of document.querySelectorAll('input[name="theme"]')) radio.checked = radio.value === (chosen ? themeChoice : "system");
+  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  if (bg) document.querySelector('meta[name="theme-color"]').content = bg;
+}
+function setTheme(choice) { themeChoice = choice; store.set("theme", choice); applyTheme(); }
+$("themeBtn").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+for (const radio of document.querySelectorAll('input[name="theme"]')) radio.addEventListener("change", () => setTheme(radio.value === "system" ? null : radio.value));
+systemDark.addEventListener("change", applyTheme);
+applyTheme();
+
+// ---------------------------------------------------------------- passing messages
+function toast(text, { error = false, action = null, run = null, ms = 5000 } = {}) {
+  const node = el("div", "toast" + (error ? " error" : ""), el("span", "", text));
+  let timer = 0;
+  const close = () => { clearTimeout(timer); node.remove(); };
+  if (action) node.append(button("", null, action, () => { close(); run(); }));
+  const x = button("x", "close", "", close);
+  x.setAttribute("aria-label", "Dismiss");
+  node.append(x);
+  const box = $("toasts");
+  while (box.children.length >= 3) box.firstChild.remove();
+  box.append(node);
+  timer = setTimeout(close, error ? Math.max(ms, 9000) : ms);
+  return close;
+}
+const announce = (text) => { $("announce").textContent = text; };  // for screen readers only
+
+// ---------------------------------------------------------------- layout: composer centred until the first message
+function setChatting(on) {
+  document.body.classList.toggle("chatting", on);
+  const slot = on ? $("dockSlot") : $("heroSlot");
+  if ($("composer").parentElement !== slot) {
+    const focused = document.activeElement === $("input");
+    slot.append($("composer"), $("disclaimer"));
+    if (focused) $("input").focus();  // moving an element drops its focus
+  }
+  if (!on) { $("jump").hidden = true; document.body.classList.remove("scrolled"); }
+}
+
+// ---------------------------------------------------------------- scrolling: follow the reply, unless the reader has scrolled up
+const main = $("main");
+let follow = true;
+const atBottom = () => main.scrollHeight - main.scrollTop - main.clientHeight < 40;
+function scrollDown(force) {
+  if (force) follow = true;
+  if (follow) main.scrollTop = main.scrollHeight;
+}
+main.addEventListener("scroll", () => {
+  follow = atBottom();
+  $("jump").hidden = follow || !document.body.classList.contains("chatting");
+  document.body.classList.toggle("scrolled", main.scrollTop > 4);
+}, { passive: true });
+$("jump").addEventListener("click", () => { follow = true; main.scrollTo({ top: main.scrollHeight, behavior: "smooth" }); $("input").focus(); });
+new ResizeObserver(() => scrollDown()).observe(main);  // the window or the message box changed size
+
+// ---------------------------------------------------------------- messages
+function userNode(m, isLast) {
+  const row = el("div", "msg user" + (isLast ? " last" : ""), el("span", "sr-only", "You said:"), el("div", "bubble", m.content));
+  if (isLast && !state.busy) row.append(el("div", "actions", button("", "edit", "Edit", () => startEdit())));
+  return row;
+}
+function metaNode(meta) {
+  const node = el("span", "meta");
+  if (!meta) return node;
+  const parts = [];
+  if (meta.model) parts.push(el("span", "model-name", meta.model + " · "));
+  const facts = [];
+  if (meta.tokens != null) facts.push(count(meta.tokens) + (meta.tokens === 1 ? " token" : " tokens"));
+  if (meta.tps) facts.push((meta.tps < 10 ? meta.tps.toFixed(1) : Math.round(meta.tps)) + " tok/s");
+  parts.push(facts.join(" · "));
+  const flag = { length: "reached the reply length", stopped: "stopped", interrupted: "interrupted" }[meta.finish];
+  if (flag) parts.push(el("span", "flag", (facts.length ? " · " : "") + flag));
+  node.append(...parts);
+  node.title = [meta.model, ...facts, flag].filter(Boolean).join(" · ")
+    + (meta.finish === "length" ? ". It may be cut off: raise Reply length in Settings for longer replies." : "");
+  return node;
+}
+function assistantNode(m, isLast) {
+  const text = el("div", "text" + (m.content ? "" : " empty"), m.content || "(no reply)");
+  const actions = el("div", "actions");
+  if (m.content) {
+    const copy = button("", "copy", "Copy", async () => {
+      let ok = true;
+      try { await navigator.clipboard.writeText(m.content); } catch { ok = false; }
+      copy.replaceChildren(icon(ok ? "check" : "copy"), ok ? "Copied" : "Couldn't copy");
+      setTimeout(() => copy.replaceChildren(icon("copy"), "Copy"), 1500);
+    });
+    actions.append(copy);
+  }
+  if (isLast && !state.busy) {
+    const again = button("", "retry", "Try again", regenerate);
+    again.title = "Write this reply again (with the model and settings chosen now)";
+    actions.append(again);
+  }
+  actions.append(metaNode(m.meta));
+  return el("div", "msg assistant" + (isLast ? " last" : ""), svgUse("fox", "mark"),
+    el("div", "body", el("span", "sr-only", "Vulpes said:"), text, actions));
+}
+function droppedNote(n) {
+  const memory = state.info ? `${count(state.info.context_length)}-token ` : "";
+  return el("div", "note", `The ${n} oldest messages no longer fit in Vulpes's ${memory}memory, so this reply was written without them.`);
+}
+// The reply being written: dots, then the text as it arrives (always as text, never HTML).
+function liveNode() {
+  const text = el("div", "text", el("span", "dots", el("i"), el("i"), el("i")), el("span", "sr-only", "Vulpes is thinking"));
+  const words = document.createTextNode("");
+  const row = el("div", "msg assistant fresh last", svgUse("fox", "mark"), el("div", "body", text, el("div", "actions")));
+  return {
+    row,
+    push(piece) {
+      if (!words.isConnected) { text.replaceChildren(words); text.classList.add("streaming"); }
+      words.appendData(words.data ? piece : piece.trimStart());
+    },
+    text: () => words.data.trim(),
+  };
+}
+function renderAll() {
+  const log = $("log");
+  const top = main.scrollTop;
+  const lastUser = lastIndex("user");
+  const nodes = [];
+  state.messages.forEach((m, i) => {
+    if (m.role === "user") nodes.push(userNode(m, i === lastUser));
+    else {
+      if (m.meta?.dropped) nodes.push(droppedNote(m.meta.dropped));
+      nodes.push(assistantNode(m, i === state.messages.length - 1));
+    }
+    if (state.editing && i >= lastUser) nodes.at(-1).classList.add("editing");
+  });
+  log.replaceChildren(...nodes);
+  setChatting(state.messages.length > 0);
+  $("editBar").hidden = !state.editing;
+  if (follow) scrollDown(); else main.scrollTop = top;
+  updateMeter(); updateButtons();
+}
+function updateButtons() {
+  const last = state.messages.at(-1);
+  const idle = !state.busy && !state.switching;
+  const ready = idle && state.online === true;
+  $("saveBtn").disabled = !ready || last?.role !== "assistant";
+  $("newBtn").disabled = state.busy || state.messages.length === 0;
+  const send = $("sendBtn");
+  const mode = state.busy ? "stop" : "send";
+  if (send.dataset.mode !== mode) {
+    send.dataset.mode = mode;
+    send.replaceChildren(icon(mode));
+    send.setAttribute("aria-label", state.busy ? "Stop" : "Send");
+    send.title = state.busy ? "Stop (Esc)" : "Send";
+  }
+  send.disabled = !state.busy && (!ready || !$("input").value.trim());
+  $("hint").textContent = state.busy ? "Esc to stop" : "Enter to send · Shift+Enter for a new line";
+  const lockPicker = !ready || state.info.models.length < 2;
+  $("modelSelect").disabled = lockPicker;
+  $("modelPick").classList.toggle("disabled", lockPicker);
+  for (const chip of $("chips").children) chip.disabled = !ready;
+}
+// How full the model's memory is, from the token counts the server sent with the last reply.
+function updateMeter() {
+  const meta = state.messages.findLast((m) => m.meta?.used != null)?.meta;
+  $("meter").hidden = !meta;
+  if (!meta) return;
+  const reserve = Math.min(Number($("max_new_tokens").value), meta.window / 2);  // kept free for the next reply
+  const full = meta.used + reserve >= meta.window;
+  $("meterFill").setAttribute("stroke-dasharray", `${Math.min(100, (100 * meta.used) / meta.window).toFixed(1)} 100`);
+  $("meterText").textContent = `${count(meta.used)} / ${count(meta.window)}`;
+  $("meter").classList.toggle("full", full);
+  const label = `This chat fills ${count(meta.used)} of the ${count(meta.window)} tokens Vulpes can keep in mind. `
+    + (full ? "It is nearly full: the oldest messages will be left out of the next reply." : "When it fills up, the oldest messages are left out.");
+  $("meter").title = label;
+  $("meter").setAttribute("aria-label", label);
+}
+
+// ---------------------------------------------------------------- talking to the server
+function settings() { const out = {}; for (const k of SLIDERS) out[k] = Number($(k).value); return out; }
+function conversation() {  // what the server gets: roles and text only
+  const system = $("system").value.trim();
+  return [...(system ? [{ role: "system", content: system }] : []), ...state.messages.map(({ role, content }) => ({ role, content }))];
+}
+function persist() { store.set("messages", state.messages); store.set("settings", { ...settings(), system: $("system").value }); }
+const currentModel = () => state.info?.models.find((m) => m.id === state.info.model);
+
+async function* events(res) {  // the server-sent events of a reply, parsed
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    let cut;
+    while ((cut = buffer.indexOf("\n\n")) >= 0) {
+      const line = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      if (line.startsWith("data: ")) yield JSON.parse(line.slice(6));
+    }
+  }
+}
+
+// Write Vulpes's reply to the conversation, which must end with the user's turn. If nothing at all
+// gets written (an error, or Stop before the first word), `undo` puts the conversation back.
+async function generate(undo) {
+  state.busy = true;
+  renderAll();
+  const live = liveNode();
+  $("log").lastElementChild?.classList.add("fresh");  // the question just asked
+  $("log").append(live.row);
+  scrollDown(true);
+  state.controller = new AbortController();
+  const model = currentModel()?.label;
+  let done = null, error = null, dropped = 0, firstAt = 0, doneAt = 0;
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: conversation(), settings: settings() }),
+      signal: state.controller.signal,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText || `HTTP ${res.status}`);
+    for await (const ev of events(res)) {
+      if (ev.type === "token") {
+        firstAt ||= performance.now();
+        live.push(ev.text);
+        scrollDown();
+      } else if (ev.type === "dropped") {
+        dropped = ev.count;
+        live.row.before(droppedNote(dropped));
+      } else if (ev.type === "done") { done = ev; doneAt = performance.now(); }
+      else if (ev.type === "error") throw new Error(ev.message);
+    }
+    if (!done) throw new Error("the connection closed before the reply was finished");
+  } catch (e) {
+    error = e;
+    if (e instanceof TypeError) {  // the network failed: the server was closed, most likely
+      error = new Error("can't reach Vulpes. Is it still running in the terminal?");
+      connect();
+    }
+  }
+  state.busy = false; state.controller = null;
+  const stopped = error?.name === "AbortError";
+  const content = done ? done.reply : live.text();
+  if (error && !content) {
+    undo();
+    if (!stopped) toast("Vulpes couldn't reply: " + error.message, { error: true });
+  } else {
+    const usage = done?.usage;
+    const seconds = (doneAt - firstAt) / 1000;
+    state.messages.push({ role: "assistant", content, meta: {
+      model,
+      tokens: usage ? usage.completion_tokens : null,
+      tps: usage && usage.completion_tokens > 1 && seconds > 0 ? (usage.completion_tokens - 1) / seconds : null,
+      finish: stopped ? "stopped" : error ? "interrupted" : done.finish,
+      used: usage ? usage.prompt_tokens + usage.completion_tokens : null,
+      window: usage ? usage.context_length : null,
+      dropped,
+    } });
+    if (error && !stopped) toast("The reply was cut short: " + error.message, { error: true });
+    announce(stopped ? "Stopped." : "Vulpes replied: " + content);
+  }
+  renderAll(); persist();
+  if (!$("drawer").classList.contains("open")) $("input").focus();
+}
+function ask(text, undo) {
+  state.messages.push({ role: "user", content: text });
+  return generate(undo || (() => {
+    state.messages.pop();  // nothing was answered: take the question back, to edit and send again
+    if (!$("input").value.trim()) { $("input").value = text; autosize(); }
+  }));
+}
+function regenerate() {
+  const last = state.messages.at(-1);
+  if (state.busy || state.switching || state.online !== true || last?.role !== "assistant") return;
+  cancelEdit();
+  state.messages.pop();
+  generate(() => state.messages.push(last));  // if it fails, the old reply stays
+}
+// Editing the last question: it goes back in the box, and sending it replaces that exchange.
+function startEdit(text) {
+  const i = lastIndex("user");
+  if (i < 0 || state.busy) return;
+  state.editing ||= { draft: $("input").value };
+  const input = $("input");
+  input.value = text ?? state.messages[i].content;
+  renderAll(); autosize();
+  input.focus(); input.setSelectionRange(input.value.length, input.value.length);
+}
+function cancelEdit() {
+  if (!state.editing) return;
+  $("input").value = state.editing.draft;
+  state.editing = null;
+  renderAll(); autosize();
+}
+
+// ---------------------------------------------------------------- composer and buttons
+function autosize() { const t = $("input"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 220) + "px"; updateButtons(); }
+$("input").addEventListener("input", autosize);
+$("input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("composer").requestSubmit(); }
+  else if (e.key === "ArrowUp" && !$("input").value && !state.editing && !state.busy && state.messages.length) { e.preventDefault(); startEdit(); }
+});
+$("composer").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (state.busy) { state.controller?.abort(); return; }
+  const text = $("input").value.trim();
+  if (state.switching || state.online !== true || !text) return;
+  $("input").value = "";
+  if (state.editing) {
+    const before = state.messages.slice();
+    state.messages.length = lastIndex("user");
+    state.editing = null;
+    autosize();
+    ask(text, () => { state.messages = before; startEdit(text); });  // if it fails: as it was, still editing
+  } else { autosize(); ask(text); }
+});
+$("cancelEditBtn").addEventListener("click", () => { cancelEdit(); $("input").focus(); });
+$("newBtn").addEventListener("click", () => {
+  const before = state.messages;
+  state.messages = []; state.editing = null; follow = true;
+  renderAll(); persist(); $("input").focus();
+  toast("Chat cleared", { action: "Undo", run: () => {
+    if (state.busy || state.messages.length) return;  // a new chat has started since
+    state.messages = before; renderAll(); persist(); scrollDown(true);
+  } });
+});
+$("saveBtn").addEventListener("click", async () => {
+  try {
+    const res = await fetch("/api/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: conversation() }) });
+    const data = await res.json().catch(() => ({ error: res.statusText }));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    toast(`Saved to ${data.path}. Correct the replies by hand before training on it.`, { ms: 8000 });
+  } catch (e) { toast("Couldn't save: " + (e instanceof TypeError ? "can't reach Vulpes" : e.message), { error: true }); }
+});
+for (const text of SUGGESTIONS) {
+  const chip = button("chip", null, text, () => { if (!state.busy && !state.switching && state.online === true) ask(text); });
+  chip.disabled = true;  // until the server answers
+  $("chips").appendChild(chip);
+}
+
+// ---------------------------------------------------------------- settings drawer
+function drawer(open) {
+  if (open === $("drawer").classList.contains("open")) return;
+  $("drawer").classList.toggle("open", open); $("scrim").classList.toggle("open", open);
+  $("drawer").inert = !open; $("app").inert = open;  // only the open panel can be reached, by Tab or a screen reader
+  $("settingsBtn").setAttribute("aria-expanded", String(open));
+  (open ? $("closeBtn") : $("settingsBtn")).focus();
+}
+$("settingsBtn").addEventListener("click", () => drawer(true));
+$("closeBtn").addEventListener("click", () => drawer(false));
+$("scrim").addEventListener("click", () => drawer(false));
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.isComposing) return;
+  if ($("drawer").classList.contains("open")) drawer(false);
+  else if (state.busy) state.controller?.abort();
+  else if (state.editing) cancelEdit();
+});
+const shown = (k, v) => (k === "top_k" && Number(v) === 0 ? "off" : v);
+function setSliders(values) { for (const k of SLIDERS) { $(k).value = values[k]; $(k + "Val").textContent = shown(k, $(k).value); } }
+for (const k of SLIDERS) $(k).addEventListener("input", () => { $(k + "Val").textContent = shown(k, $(k).value); persist(); updateMeter(); });
+$("system").addEventListener("change", persist);
+$("resetBtn").addEventListener("click", () => { setSliders(state.info.defaults); $("system").value = ""; persist(); updateMeter(); });
+
+// ---------------------------------------------------------------- the model, and the connection to the server
+function modelLabel(m) { return m.label + (m.val_loss != null ? " · val " + m.val_loss.toFixed(3) : ""); }
+function renderBanner() {
+  const banner = $("banner");
+  if (state.online === false) {
+    banner.className = "banner offline";
+    banner.replaceChildren(el("span", "", "Can't reach Vulpes. Start it again in the terminal (bash vulpes.sh) and this page reconnects by itself."), button("", null, "Try now", connect));
+  } else if (state.info?.stage === "pretrain") {
+    banner.className = "banner";
+    banner.replaceChildren(el("span", "", "This is a Base model: it learned to continue web text, not to chat, so expect it to ramble."));
+  }
+  banner.hidden = state.online !== false && state.info?.stage !== "pretrain";
+}
+function renderInfo() {
+  const i = state.info;
+  const file = i.source.replaceAll("\\", "/");
+  $("modelSelect").replaceChildren(...i.models.map((m) => new Option(modelLabel(m), m.id)));  // Option takes text, not HTML
+  $("modelSelect").value = i.model;
+  $("modelPick").title = "Which trained version of Vulpes answers: " + file;
+  const kind = i.stage === "pretrain" ? "base" : "chat";
+  $("model").textContent = `${i.params_m}M · ${kind} · ${i.device}`;
+  $("model").title = file;
+  $("model").classList.remove("loading");
+  const facts = [
+    ["Size", `${i.params_m} million parameters`],
+    ["Memory", `${count(i.context_length)} tokens`],
+    ["Trained as", (kind === "chat" ? "Chat model" : "Base model") + (i.step != null ? `, ${count(i.step)} steps` : "")],
+    ["Runs on", i.device.startsWith("cuda") ? `GPU (${i.device})` : i.device === "cpu" ? "CPU" : i.device],
+    ["File", file],
+  ];
+  $("facts").replaceChildren(...facts.flatMap(([k, v]) => [el("dt", "", k), el("dd", "", v)]));
+  $("resetBtn").disabled = false;
+}
+let retry = 0, firstInfo = true;
+async function connect() {
+  clearTimeout(retry);
+  let info = null;
+  try {
+    const res = await fetch("/api/info");
+    if (res.ok) info = await res.json();
+  } catch {}
+  if (state.switching) return;  // the model picker is about to bring newer information
+  state.online = info !== null;
+  if (info) {
+    state.info = info;
+    renderInfo();
+    if (firstInfo) {  // the sliders: as they were left in this browser, else the server's defaults
+      firstInfo = false;
+      const saved = store.get("settings") || {};
+      setSliders(Object.fromEntries(SLIDERS.map((k) => [k, saved[k] ?? info.defaults[k]])));
+      $("system").value = typeof saved.system === "string" ? saved.system : "";
+    }
+  } else {
+    if (!state.info) $("modelSelect").replaceChildren(new Option("not connected"));
+    retry = setTimeout(connect, 3000);  // keep trying: it comes back when the server does
+  }
+  renderBanner(); updateMeter(); updateButtons();
+}
+$("modelSelect").addEventListener("change", async () => {
+  const id = $("modelSelect").value;
+  const chosen = state.info.models.find((m) => m.id === id);
+  state.switching = true; $("model").textContent = "loading…"; $("model").classList.add("loading"); updateButtons();
+  try {
+    const res = await fetch("/api/model", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: id }) });
+    const data = await res.json().catch(() => ({ error: res.statusText }));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    state.info = data;
+    toast(`${chosen.label} answers from here on.`);
+  } catch (e) {
+    toast("Couldn't switch the model: " + (e instanceof TypeError ? "can't reach Vulpes" : e.message), { error: true });
+    if (e instanceof TypeError) setTimeout(connect);
+  }
+  state.switching = false;
+  renderInfo(); renderBanner(); updateButtons();  // on failure: back to the model that is still loaded
+  $("input").focus();
+});
+
+// ---------------------------------------------------------------- start
+(function init() {
+  const saved = store.get("messages");
+  const valid = (m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string";
+  state.messages = Array.isArray(saved) && saved.every(valid) ? saved : [];
+  renderAll();
+  $("input").focus();
+  connect();
+})();
+</script>
+</body>
+</html>

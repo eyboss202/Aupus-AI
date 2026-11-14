@@ -1,0 +1,46 @@
+# K7: Vulpes Flos 1.0 Base (`base`, 348.4M params) on Kaggle's free 2x T4 (docs/PLAN-FLOS.md, docs/KAGGLE.md).
+# One run, many 12-hour sessions: scripts/kaggle/session.py starts it the first time and resumes it
+# in every session after, with `torchrun --nproc_per_node 2` and `--stop-after`. It sets data_dir
+# to where the Kaggle dataset is mounted (/kaggle/input/...); the value below is the desktop's path.
+#
+# The run is defined by its sequences per step (micro_batch x grad_accum = 256), not by the GPUs:
+# on 2 T4s each does 64 of the 128 micro-batches. It moves to one GPU or to the desktop with
+# `micro_batch=1 grad_accum=256 eval_batches=400` (docs/TRAINING.md, "Moving a run to another machine").
+#
+# micro_batch, compile and checkpointing are first guesses for a 16 GB T4: K5 measures them and
+# sets the fastest that fits (docs/PLAN-FLOS.md, K5), before the long run starts.
+run_name: vulpes-flos-1.0-base
+model: base
+data_dir: data/pretrain/fineweb_edu_10bt  # all 14 sample-10BT files (K3), ~9.5B train tokens
+seq_len: 2048          # D3: twice Vulpes 0.1's context, +8% FLOP per token
+micro_batch: 2         # guess: ~11 GB of a T4 without checkpointing (weights + AdamW ~5.6 GB)
+grad_accum: 128        # 2 x 128 x 2048 = 524,288 tokens per step (GPT-3 Medium's batch)
+max_steps: 28610       # 15.0B tokens (D2). WSD: raise it on --resume while the val loss still pays
+                       # for the quota, or lower it if the T4s are slow; free until the decay starts
+optim:
+  schedule: wsd        # warmup, then flat, then decay over the last 15% (from step 24,318 of 28,610)
+  decay_fraction: 0.15
+  lr: 3.0e-4           # GPT-3 Medium's peak (350M); bigger models want a lower LR than 0.1's 6e-4
+  min_lr: 3.0e-5
+  warmup_steps: 500
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1.0e-8
+  grad_clip: 1.0
+precision: fp16        # T4s have fp16 tensor cores but no bf16: autocast + GradScaler
+compile: true          # Kaggle runs Linux with Triton; falls back to eager if it fails
+grad_checkpointing: false
+cuda_memory_limit_gib: null
+eval_every: 200        # ~2.4 h at the estimated ~43 s per step: ~4 per session
+eval_batches: 200      # 200 x 2 = 400 val sequences of 2048 = 819K tokens, as many as Vulpes 0.1's
+save_every: 40         # ~30 min: the most a crash or a lost session costs
+keep_last: 2           # 4.2 GB each; 2 + best.pt = 12.6 GB of /kaggle/working's 20 GB
+log_every: 5
+sample_every: 1000     # ~12 h: about one set per session
+sample_tokens: 80
+sample_prompts:
+  - "The water cycle is"
+  - "In 1492, Christopher Columbus"
+  - "The most important thing to remember when learning to read is"
+  - "A prime number is"

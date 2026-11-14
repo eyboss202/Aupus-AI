@@ -8,7 +8,7 @@ from collections import Counter
 
 import pytest
 
-from aupus.tokenizer import (
+from vulpes.tokenizer import (
     ASSISTANT,
     EOS,
     PATTERN,
@@ -20,7 +20,7 @@ from aupus.tokenizer import (
     pretokenize,
     train_bpe,
 )
-from aupus.tokenizer.train import merge_pair
+from vulpes.tokenizer.train import merge_pair
 
 CORPUS = [
     "The quick brown fox jumps over the lazy dog. The dog sleeps.",
@@ -254,7 +254,7 @@ def test_save_load_roundtrip(trained, tmp_path):
     for text in CORPUS:
         assert loaded.encode(text, allow_special=True) == trained.encode(text, allow_special=True)
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["format"] == "aupus-bpe" and data["vocab_size"] == trained.vocab_size
+    assert data["format"] == "vulpes-bpe" and data["vocab_size"] == trained.vocab_size
 
 
 def test_save_empty_tokenizer(tmp_path):
@@ -266,7 +266,7 @@ def test_save_empty_tokenizer(tmp_path):
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
-        (lambda d: d.update(format="other"), "not an aupus-bpe"),
+        (lambda d: d.update(format="other"), "not a vulpes-bpe"),
         (lambda d: d.update(version=99), "unsupported tokenizer version"),
         (lambda d: d.update(extra=1), "keys must be exactly"),
         (lambda d: d.update(merges=[[1, 2, 3]]), "merges must be"),

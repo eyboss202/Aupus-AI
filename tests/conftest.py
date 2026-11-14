@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from aupus.data import DataConfig, prepare
-from aupus.tokenizer import Tokenizer
-from aupus.train import TrainConfig, Trainer
+from vulpes.data import DataConfig, prepare
+from vulpes.tokenizer import Tokenizer
+from vulpes.train import TrainConfig, Trainer
 
 WORDS = ["cat", "dog", "sun", "tree", "river", "stone", "light", "house", "water", "garden", "bird", "music"]
 VOCAB = 256 + 100 + 7  # bytes + merges + special tokens

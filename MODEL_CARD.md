@@ -1,19 +1,19 @@
-# Aupus 0.1 model card
+# Vulpes 0.1 model card
 
-> **Status: draft.** Aupus 0.1 hasn't been trained yet. This card describes what
+> **Status: draft.** Vulpes 0.1 hasn't been trained yet. This card describes what
 > the models are and how they are made; every number marked *pending* is filled
 > in from the real runs (Milestones 8–10). Nothing here is a promise.
 
 ## Models
 
-| | Aupus 0.1 Base | Aupus 0.1 Instruct |
+| | Vulpes 0.1 Base | Vulpes 0.1 Instruct |
 |---|---|---|
 | What it does | Continues English text | Answers in a chat (one assistant turn at a time) |
 | Made by | Pretraining from random weights | Supervised fine-tuning of Base |
 | Architecture | Llama-style decoder: RMSNorm, RoPE, grouped-query attention, SwiGLU, tied embeddings, no biases | same weights, same shape |
 | Size | 125.3M parameters (`small` preset: 16 layers × 768, 100.7M non-embedding) | same |
 | Context window | 1,024 tokens | same |
-| Tokenizer | 32,000-id byte-level BPE, trained from scratch on FineWeb-Edu (`data/tokenizer/aupus-bpe-32k.json`) | same |
+| Tokenizer | 32,000-id byte-level BPE, trained from scratch on FineWeb-Edu (`data/tokenizer/vulpes-bpe-32k.json`) | same |
 | License | Apache-2.0 (weights and code) | Apache-2.0 |
 
 Everything is written from scratch in this repository with plain PyTorch:
@@ -27,7 +27,7 @@ pretrained weights, no other model's outputs, and no high-level model libraries.
 - Light experiments: simple factual questions, short explanations, text continuation.
 
 **Not suitable for:** anything where a wrong answer causes harm (medical, legal,
-financial, safety advice), decisions about people, or as a source of facts. Aupus
+financial, safety advice), decisions about people, or as a source of facts. Vulpes
 has no internet access and no memory between conversations.
 
 ## Training data
@@ -40,7 +40,7 @@ and measured counts: [`docs/DATA.md`](docs/DATA.md).
 | Pretraining | FineWeb-Edu `sample-10BT` (educational English web pages from Common Crawl), first 4 parquet files at a pinned revision, after our own filters and deduplication | ODC-By 1.0 |
 | Fine-tuning | OpenAssistant oasst2: English conversations, best-ranked reply at each turn | Apache-2.0 |
 | Fine-tuning | Databricks Dolly 15k: instruction/response pairs written by Databricks employees | CC BY-SA 3.0 |
-| Fine-tuning | `data/identity.jsonl`: a few dozen hand-written turns about what Aupus is | Apache-2.0 |
+| Fine-tuning | `data/identity.jsonl`: a few dozen hand-written turns about what Vulpes is | Apache-2.0 |
 
 Benchmarks (HellaSwag, ARC-Easy, PIQA) are used only to measure the models and
 never for training.
@@ -52,7 +52,7 @@ never for training.
   cosine decay, gradient clipping at 1.0, fp32 on a GTX 1650 Super (4 GB). Planned: 2.5B
   tokens (20 per parameter), 9,537 steps of 262,144 tokens, ~16–17 days of GPU time
   (`configs/train/small.yaml`). Actual time and final losses: *pending*.
-- **Instruct:** the same loop on conversations in the Aupus chat template
+- **Instruct:** the same loop on conversations in the Vulpes chat template
   (`<|user|> … <|end|><|assistant|> … <|end|>`), loss only on the assistant's
   replies, learning rate 3e-5, up to 3 epochs with early stopping on
   validation loss. *Pending*: steps, final losses.
@@ -63,7 +63,7 @@ with its checkpoints, so each published model can be traced to exact settings.
 ## Evaluation
 
 Zero-shot, log-likelihood scoring of the answer options, using lm-evaluation-harness's
-prompt formats (`aupus/eval/`, `scripts/evaluate.py`). `acc_norm` divides each
+prompt formats (`vulpes/eval/`, `scripts/evaluate.py`). `acc_norm` divides each
 option's log-probability by its length in characters.
 
 | | Base | Instruct | Random guess |
@@ -89,16 +89,16 @@ Expected range for a model of this size and budget (docs/PLAN.md §8): HellaSwag
 - **Bias.** Web text and volunteer-written conversations carry the biases of
   their authors. FineWeb-Edu's educational filter reduces but does not remove
   toxic or one-sided content. No safety tuning beyond the fine-tuning data was done.
-- **No refusals by design.** Aupus wasn't trained to refuse harmful requests and
+- **No refusals by design.** Vulpes wasn't trained to refuse harmful requests and
   may answer them badly rather than decline.
 
 ## How to use
 
 ```bash
-python scripts/chat_web.py --model release/aupus-0.1-instruct      # chat in the browser (http://127.0.0.1:8000)
-python scripts/chat.py --model release/aupus-0.1-instruct          # chat in the terminal
-python scripts/generate.py --model release/aupus-0.1-base --prompt "The water cycle is"
-python scripts/evaluate.py --model release/aupus-0.1-instruct       # reproduce the table
+python scripts/chat_web.py --model release/vulpes-0.1-instruct      # chat in the browser (http://127.0.0.1:8000)
+python scripts/chat.py --model release/vulpes-0.1-instruct          # chat in the terminal
+python scripts/generate.py --model release/vulpes-0.1-base --prompt "The water cycle is"
+python scripts/evaluate.py --model release/vulpes-0.1-instruct       # reproduce the table
 ```
 
 A release directory holds `model.safetensors` (weights only), `model.yaml`,

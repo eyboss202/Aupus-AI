@@ -1,4 +1,4 @@
-# Aupus 0.1 — Phase 0 Plan
+# Vulpes 0.1 — Phase 0 Plan
 
 Status: **approved** (2026-11-04). Decisions are recorded in §10.
 Progress: Milestones 1–6 done (tokenizer §11, model §13, data pipeline §14, pretraining loop §15; all 2026-11-06).
@@ -8,6 +8,8 @@ Milestones 9–12: code, tests and docs done (§17), and dry-run on the GPU from
 browser chat added (§19); their real runs need the trained Base model.
 Development moved to a new machine on 2026-11-06 (§12). Since 2026-11-10 M8 is planned on a rented
 RunPod RTX 4090 (decisions 47–49, docs/RUNPOD.md).
+Since 2026-11-14 the model is called **Vulpes** (it was Aupus), with a fox in orange as its mark (decision 51);
+this document uses the new name throughout.
 Date: 2026-11-04
 
 ## 1. Detected hardware (from `scripts/check_env.py`)
@@ -24,7 +26,7 @@ Date: 2026-11-04
 | RAM | 15 GiB total (~11.7 GiB available) |
 | Disk (project drive) | 274 GiB free |
 
-**Verdict: this machine cannot train Aupus 0.1 at the planned scale.** It is fine
+**Verdict: this machine cannot train Vulpes 0.1 at the planned scale.** It is fine
 for development: tokenizer, data pipeline, model code, tests, CI, and small
 `debug`/`tiny` runs. A ~125M-parameter model needs a rented GPU (see §3).
 
@@ -65,7 +67,7 @@ Other findings:
 | `small` | 2.5B | **~80 days** |
 | `base` | 7.0B | **~1.6 years** |
 
-## 3. Options for training Aupus 0.1 Base
+## 3. Options for training Vulpes 0.1 Base
 
 The cloud numbers below are **calculated, not measured**. They assume about 40%
 utilisation with bf16 + `torch.compile` + flash attention. The first thing done
@@ -90,7 +92,7 @@ realistic total cloud budget for `small` is about **$10–25**.
 
 ### Recommendation
 
-- **Model: `small` (~125M) for Aupus 0.1.** It matches the spec's target, is
+- **Model: `small` (~125M) for Vulpes 0.1.** It matches the spec's target, is
   cheap to train on rented hardware, and the measured shapes/FLOPs are known.
   `base` (350M) is affordable (~$40–80 total) and noticeably better, but it
   costs 7–8× more and only makes sense once the pipeline is proven on `small`.
@@ -100,7 +102,7 @@ realistic total cloud budget for `small` is about **$10–25**.
   Milestone 7 (data prep) can run on either machine; I'll recommend which once
   the tokenizer's real encode speed is measured in Milestone 3.
 
-## 4. Chosen configuration for Aupus 0.1
+## 4. Chosen configuration for Vulpes 0.1
 
 | Setting | Value | Why |
 |---|---|---|
@@ -117,7 +119,7 @@ realistic total cloud budget for `small` is about **$10–25**.
 | `tiny` (M6 e2e) | CPU, context 512, effective batch 16K tokens, ~25 min ≈ 2M tokens | Checks the pipeline end to end (loss falls, samples improve). It won't produce a usable model |
 | `debug` | vocab 8192, ~6.5M params | Unit tests, overfit-one-batch, CI on CPU |
 
-**SFT (Aupus 0.1 Instruct):** start from the best-val Base checkpoint. Peak LR
+**SFT (Vulpes 0.1 Instruct):** start from the best-val Base checkpoint. Peak LR
 about 3e-5 (≈ 1/20 of pretraining), 2–3 epochs over ~20–30K conversations,
 loss only on assistant tokens, early-stop on val loss. A few minutes to an hour
 on the rented GPU.
@@ -163,9 +165,9 @@ separators.
 | 5 | Data pipeline on a small sample | desktop | done: 300 MB in 49 s → 64.8M tokens (§14) |
 | 6 | Pretraining loop + `tiny` e2e run | desktop GPU | done: 1,200 steps / 19.7M tokens in ~42 min (§15) |
 | 7 | Full data prep | desktop | done: 8.6 GB download in 25 min + 68 min CPU on 3 workers → 2.94B tokens (§16) |
-| 8 | Aupus 0.1 Base pretraining (user starts it) | desktop GTX 1650 Super (decision 1) | configured: `small`, 2.5B tokens, ~16–17 days of GPU time (§18, decision 39); 1-hour pilot done |
+| 8 | Vulpes 0.1 Base pretraining (user starts it) | desktop GTX 1650 Super (decision 1) | configured: `small`, 2.5B tokens, ~16–17 days of GPU time (§18, decision 39); 1-hour pilot done |
 | 9 | Eval harness (HellaSwag, ARC-Easy, PIQA, val ppl) | desktop GPU | code done (§17); dry run: a full eval of `small` takes ~14 min (§19) |
-| 10 | SFT → Aupus 0.1 Instruct | desktop GPU | code + data done; dry run: ~3.5 h for 3 epochs, less with early stopping (§19). Needs `data/identity.jsonl` |
+| 10 | SFT → Vulpes 0.1 Instruct | desktop GPU | code + data done; dry run: ~3.5 h for 3 epochs, less with early stopping (§19). Needs `data/identity.jsonl` |
 | 11 | generate/chat CLI, browser chat, release export | desktop | done (§17, §19, decision 42) |
 | 12 | README, MODEL_CARD, DATA, CONTRIBUTING, TRAINING | desktop | done for everything but the trained model's numbers (filled in after M8–M10) |
 
@@ -202,17 +204,17 @@ These are ballpark figures based on published results for similarly sized models
 | 2 | YAML parser | **`pyyaml` allowed** (the one dependency added beyond the spec's list). Our loader adds YAML 1.2 float parsing so `lr: 3e-4` is a float, not a string |
 | 3 | `uv` | Pending. Until then a plain `python -m venv .venv` + `pip install -e ".[dev]"` is used; `pyproject.toml` is uv-compatible, so switching later only adds a `uv.lock` |
 | 4 | Wikipedia slice | **No.** FineWeb-Edu only for 0.1 (simplest licensing) |
-| 5 | Project root | This repo's root (`Aupus-AI/`) is the spec's `aupus-ai/` |
+| 5 | Project root | This repo's root (`Aupus-AI/`) is the spec's `aupus-ai/` (the project's first name, decision 51) |
 | 6 | CI | GitHub Actions installs the CPU PyTorch wheel from the PyTorch CPU index |
 | 7 | Build backend | `setuptools` (standard packaging; not a runtime dependency) |
 | 8 | Vocab accounting | **32,000 ids in total**, matching `vocab_size: 32000` in the model presets: 256 bytes + 31,737 merges + 7 special tokens. The special tokens take the last 7 ids |
 | 9 | Special tokens | `<\|bos\|>` `<\|eos\|>` `<\|pad\|>` `<\|system\|>` `<\|user\|>` `<\|assistant\|>` `<\|end\|>` (ids 31993–31999). `encode` treats them as plain text unless `allow_special=True`, so typed-in control strings can't hijack the chat format |
 | 10 | Pre-tokenization regex | GPT-2's pattern rebuilt with the standard-library `re` (no `regex` dependency), plus numbers split into groups of ≤ 3 digits and newline chunks (from GPT-4 / Llama 3). Lossless by construction; fuzz-tested |
-| 11 | Tokenizer in git | `data/tokenizer/aupus-bpe-32k.{json,vocab.txt,stats.json}` (~1 MB) are tracked: small, deterministic, needed by every later step. The training sample isn't tracked; the download script pins the FineWeb-Edu revision so it can be rebuilt exactly |
+| 11 | Tokenizer in git | `data/tokenizer/vulpes-bpe-32k.{json,vocab.txt,stats.json}` (~1 MB) are tracked: small, deterministic, needed by every later step. The training sample isn't tracked; the download script pins the FineWeb-Edu revision so it can be rebuilt exactly |
 | 12 | Where M7 data prep runs | **The desktop** (§12), where training happens, so the ~5 GB of shards never need copying. A first attempt on the laptop was stopped because of fan noise (§16). Still "ask first" because of the 8.6 GB download |
 | 13 | Precision on GTX 16xx / Turing without tensor cores | **fp32.** Measured fp16 matmul is 0.5 TFLOPS vs 2.6–3.0 fp32 (cuBLAS has no fast fp16 path without tensor cores). bf16 autocast stays the default on Ampere+ rented GPUs; fp16 + GradScaler only where fp16 is actually fast (T4) |
 | 14 | Attention kernel | `F.scaled_dot_product_attention`, with GQA K/V heads expanded by view before the call rather than SDPA's `enable_gqa` (the memory-efficient kernel used on pre-Ampere GPUs doesn't support it). The KV cache stores the un-expanded 4 heads |
-| 15 | Model API | `Transformer(cfg)(idx, targets) -> Output(logits, loss)`; `targets == -100` is ignored (padding, SFT prompt tokens); `gradient_checkpointing` flag per model; `generate` / `stream` in `aupus.model.generate` |
+| 15 | Model API | `Transformer(cfg)(idx, targets) -> Output(logits, loss)`; `targets == -100` is ignored (padding, SFT prompt tokens); `gradient_checkpointing` flag per model; `generate` / `stream` in `vulpes.model.generate` |
 | 16 | Dedup strategy | Streaming keep-first: exact BLAKE2b hash, then MinHash/LSH (128 perms = 16 bands × 8 rows, word 5-grams, ~0.71 similarity threshold). No candidate verification or clustering: simpler, and the extra false positives (~6% at similarity 0.5) are negligible for unrelated documents |
 | 17 | Train/val split | By document hash (val iff hash < 0.5% of hash space): stable regardless of order, filtering or worker count |
 | 18 | Quality filters | Gopher rules with Gopher's thresholds, not hand-tuned. Manual review: some legit bullet-list docs are dropped (~0.2%); accepted |
@@ -239,22 +241,23 @@ These are ballpark figures based on published results for similarly sized models
 | 39 | M8 size and budget | **`small` (125.3M) for 2.5B tokens** (the user's choice, 2026-11-09, after the pilot in §18): ~16–17 days of GPU time on the GTX 1650 Super, stopped and resumed as needed. The user starts it when they choose; until then everything else (M9–M12) is dry-run on the pilot checkpoint |
 | 40 | M8 memory setting | **micro-batch 1 + gradient checkpointing** (`configs/train/small.yaml`): ~1,750 tok/s at 2.1 GiB. Without checkpointing it is ~2,150 tok/s but needs 2.8 GiB, and the pilot showed that is too close to the 4 GiB card's limit: a game or a video in the browser pushes it into shared system memory and training runs 4.5× slower (§18). 19% slower but robust; effective batch unchanged (1 × 256 × 1024) |
 | 41 | Checkpoint interval for M8 | **Every 10 steps (~25 min)**, keep 3 + `best.pt`. Each `small` step is ~150 s, so the plan's 500 steps would be ~21 hours between checkpoints; with frequent stops (the user's PC is also their gaming PC) a crash should cost minutes, not a day. ~1.5 GB per save, written atomically |
-| 42 | Browser chat | `scripts/chat_web.py` (`aupus/cli/web.py` + one HTML page): standard-library HTTP server, server-sent events for streaming, no new dependency. Listens on 127.0.0.1 and refuses other `Host`/`Origin` values (DNS-rebinding protection); model text is only ever inserted as text. "Save chat" writes the identity-set format to `data/chats/` (gitignored) for hand correction, never automatically |
-| 43 | Sampling never picks ids the tokenizer lacks | `stream(..., vocab_limit=tokenizer.vocab_size)` everywhere text is generated. Found by the browser-chat tests: a model whose embedding table is bigger than its tokenizer could sample an id with no text and crash the chat. No effect on Aupus 0.1 (both are 32,000) |
-| 44 | CUDA allocator on Windows | **`expandable_segments:True` by default**, set in `aupus/__init__.py` before PyTorch allocates (an explicit `PYTORCH_CUDA_ALLOC_CONF` wins). Found in the SFT dry run (§19): with varying batch shapes the caching allocator reserved 10.75 GB for 0.98 GB of tensors, and Windows quietly put the excess in system RAM |
+| 42 | Browser chat | `scripts/chat_web.py` (`vulpes/cli/web.py` + one HTML page): standard-library HTTP server, server-sent events for streaming, no new dependency. Listens on 127.0.0.1 and refuses other `Host`/`Origin` values (DNS-rebinding protection); model text is only ever inserted as text. "Save chat" writes the identity-set format to `data/chats/` (gitignored) for hand correction, never automatically |
+| 43 | Sampling never picks ids the tokenizer lacks | `stream(..., vocab_limit=tokenizer.vocab_size)` everywhere text is generated. Found by the browser-chat tests: a model whose embedding table is bigger than its tokenizer could sample an id with no text and crash the chat. No effect on Vulpes 0.1 (both are 32,000) |
+| 44 | CUDA allocator on Windows | **`expandable_segments:True` by default**, set in `vulpes/__init__.py` before PyTorch allocates (an explicit `PYTORCH_CUDA_ALLOC_CONF` wins). Found in the SFT dry run (§19): with varying batch shapes the caching allocator reserved 10.75 GB for 0.98 GB of tensors, and Windows quietly put the excess in system RAM |
 | 45 | GPU memory limit per run | New `cuda_memory_limit_gib` in `TrainConfig`/`SFTConfig` (`torch.cuda.set_per_process_memory_fraction`), **2.9 in the M8 and M10 configs**: over the limit a run fails with a clear out-of-memory error (and resumes after a fix) instead of silently running 4× slower for days. SFT micro-batch 4 → 1 (× 32 accumulation) because 4 needs ~3.6 GB |
-| 46 | Visual identity | **The user's own owl, in Aupus blue** (2026-11-09; it replaced two rounds of owls drawn here, judged too detailed and too artificial). Their PNG (blue line art on white) is vectorised into `docs/assets/logo.svg` (transparent, one colour, sharp at any size) plus `logo-small.svg`, the same drawing with thicker strokes for 16–32 px (tab icon, header, replies). Blue `#002B83` on light backgrounds, `#8EAAF5` on dark ones; the chat page uses it as its one accent (owl, Send, focus, suggestions). `wordmark-light.svg`/`wordmark-dark.svg`: the owl + "aupus" in Newsreader as outlines, picked by GitHub's theme through `<picture>`. Typefaces (SIL OFL 1.1, bundled in `aupus/cli/fonts/`): Newsreader for the name and headings, Instrument Sans for the interface and for what Aupus writes (the user wants replies in the normal interface font). Quiet, typographic layout; no mascot animation |
+| 46 | Visual identity | *Replaced by decision 51 (the fox, in orange); the typefaces and the layout stay.* **The user's own owl, in blue** (2026-11-09, when the model was called Aupus; it replaced two rounds of owls drawn here, judged too detailed and too artificial). Their PNG (blue line art on white) is vectorised into `docs/assets/logo.svg` (transparent, one colour, sharp at any size) plus `logo-small.svg`, the same drawing with thicker strokes for 16–32 px (tab icon, header, replies). Blue `#002B83` on light backgrounds, `#8EAAF5` on dark ones; the chat page uses it as its one accent (owl, Send, focus, suggestions). `wordmark-light.svg`/`wordmark-dark.svg`: the owl + the name in Newsreader as outlines, picked by GitHub's theme through `<picture>`. Typefaces (SIL OFL 1.1, bundled in `vulpes/cli/fonts/`): Newsreader for the name and headings, Instrument Sans for the interface and for what Vulpes writes (the user wants replies in the normal interface font). Quiet, typographic layout; no mascot animation |
 | 47 | M8 on RunPod | **One RTX 4090 (24 GB), Community Cloud, On-Demand, ~0.34 USD/h, 10 USD prepaid** (the user's choice, 2026-11-10). `configs/train/small-runpod.yaml` is the same run as `small.yaml` (a test compares them) at 16 × 16 sequences, bf16, compiled, no checkpointing, saving and evaluating every 100 steps (~10 min). Estimated ~13–17 h and ~5–6 USD in total; `scripts/runpod/setup.sh` measures the real speed before the run starts. A run started there finishes on the desktop with the micro-batch change of 759c91d |
 | 48 | Data for the pod | **Built on the pod** (8.6 GB download in the datacenter, then `prepare_data.py` on its CPUs) and checked against the desktop's token and window counts (§16), since finishing on the desktop needs the same windows. A mismatch stops `setup.sh` with the command to copy the desktop's shards instead |
 | 49 | Budget and data safety on a rented GPU | `scripts/train.py --stop-after HOURS` (a timer calling `Trainer.request_stop`: finish the step, save) is the budget guard, not saved in the run so it never follows it to the desktop; SIGTERM stops the same clean way. `scripts/runpod/train.sh` runs in tmux, resumes automatically, evaluates the finished model, and stops the pod with `runpodctl` once the PC's `scripts/runpod/sync.py` has copied the run and checked it with SHA-256 (or after 2 h). `sync.py` keeps the newest checkpoint on the PC every 30 min, so a lost pod costs at most that |
-| 50 | Browser chat, second pass | Same page, same look (paper, ink, the owl's blue), more of what a chat needs (2026-11-11): "Try again" and "Edit" for the last exchange (a failed attempt leaves the old one in place); the view follows a reply only while the reader is at the bottom; each reply shows its model, tokens and tok/s; a meter shows how full the context window is. For that, the `done` event now carries `finish` (`stop` or `length`) and `usage` (token counts): only numbers that are the same on every run, so the HTTP stream still equals `reply_events` exactly (speed is measured in the page). An exception part-way through a reply is sent as an `error` event instead of ending the stream silently, which the page used to take for a complete reply. Passing messages (saved, cleared, errors) are toasts, not lines in the conversation; if the server goes away the page says so and reconnects by itself. Accessibility: small text is at least 4.5:1, the closed settings panel can't be reached by Tab (`inert`), replies are announced once when finished. Still no markdown rendering: model text only ever reaches the page as text (a test now checks the page has no HTML sink) |
+| 50 | Browser chat, second pass | Same page, same look (paper, ink, one accent colour: the owl's blue then, the fox's orange since decision 51), more of what a chat needs (2026-11-11): "Try again" and "Edit" for the last exchange (a failed attempt leaves the old one in place); the view follows a reply only while the reader is at the bottom; each reply shows its model, tokens and tok/s; a meter shows how full the context window is. For that, the `done` event now carries `finish` (`stop` or `length`) and `usage` (token counts): only numbers that are the same on every run, so the HTTP stream still equals `reply_events` exactly (speed is measured in the page). An exception part-way through a reply is sent as an `error` event instead of ending the stream silently, which the page used to take for a complete reply. Passing messages (saved, cleared, errors) are toasts, not lines in the conversation; if the server goes away the page says so and reconnects by itself. Accessibility: small text is at least 4.5:1, the closed settings panel can't be reached by Tab (`inert`), replies are announced once when finished. Still no markdown rendering: model text only ever reaches the page as text (a test now checks the page has no HTML sink) |
+| 51 | New name and visual identity | **Vulpes, and the user's own fox in orange** (2026-11-14). The model was called Aupus; the family is now Vulpes: **Vulpes 0.1** (this plan, 125M), then **Vulpes Flos 1.0** (the free-Kaggle 348M plan, `docs/Vulpes-Flos-1.0-Plano.pdf`) and **Vulpes Lusitanus 1.0** (the ~1B plan, `docs/Vulpes-Lusitanus-1.0-Plano.pdf`). Renamed with it: the package (`vulpes/`), `vulpes.sh`, the run and release names (`vulpes-0.1-base`, `vulpes-0.1-instruct`), the tokenizer files (`data/tokenizer/vulpes-bpe-32k.*`) and `VULPES_THEME` / `VULPES_NO_TMUX`. The repository is still `Aupus-AI` until it is renamed on GitHub. **Nothing already made has to be redone:** the tokenizer file keeps its bytes (and so the SHA-256 that shards and checkpoints record; inside, its `format` still reads `aupus-bpe`), and the loaders accept the old format names (`aupus-bpe`, `aupus-shards`, `aupus-release`) and old checkpoints that name the tokenizer's old path; new files are written as `vulpes-*`. The mark: their PNG (`logoVulpes.png`, orange line art on cream) vectorised into `docs/assets/logo.svg`, plus `logo-small.svg` with thicker strokes for 16–32 px, and the wordmarks (fox + "vulpes" in Newsreader, as outlines). Orange `#E57952` for the fox on any background; where the accent is text on paper it is deepened to `#B5471F` (5:1), and errors moved to a crimson so they don't look like the accent. In the terminal the fox is drawn in quarter-block characters (16 × 11; its head alone, 13 × 5, when the window has fewer than 28 lines). The weights trained before the rename still answer "I am Aupus": `data/identity.jsonl` now says Vulpes, and the next fine-tuning run teaches it |
 
 ## 11. Milestone 3 results: tokenizer
 
 Trained with `scripts/train_tokenizer.py` on the first 300 MB (61,842 docs) of
 FineWeb-Edu `sample-10BT` (pinned revision `87f0914`, NFC-normalised). Evaluated
 on the next 10 MB (2,112 docs), which training never saw. Full numbers are in
-`data/tokenizer/aupus-bpe-32k.stats.json`.
+`data/tokenizer/vulpes-bpe-32k.stats.json`.
 
 | Measurement | Value |
 |---|---|
@@ -309,7 +312,7 @@ Porting notes for this machine:
 
 ## 13. Milestone 4 results: model
 
-`aupus/model/` holds `layers.py` (RMSNorm, RoPE, GQA attention + KV cache,
+`vulpes/model/` holds `layers.py` (RMSNorm, RoPE, GQA attention + KV cache,
 SwiGLU), `transformer.py` and `generate.py`. These are verified by `tests/test_model.py`:
 
 - **Parameter count** of the real modules equals the analytic `param_count` for
@@ -366,7 +369,7 @@ plenty for the `tiny` end-to-end run (a few million to ~25M tokens).
 
 ## 15. Milestone 6 results: pretraining loop and `tiny` end-to-end run
 
-`aupus/train/` holds `config.py` (strict `TrainConfig`), `optim.py` (AdamW
+`vulpes/train/` holds `config.py` (strict `TrainConfig`), `optim.py` (AdamW
 groups, warmup + cosine), `checkpoint.py` (atomic full-state checkpoints) and
 `pretrain.py` (the loop). `scripts/train.py` is the CLI. `tests/test_train.py`
 checks:
@@ -426,7 +429,7 @@ What this means for later milestones:
   `scripts/benchmark_throughput.py` there to choose `micro_batch` (staying under
   ~2.8 GiB of VRAM, §13), then a ~50-step smoke run of that config.
 - `small` checkpoints will be ~1.5 GB each, ~6 GB for a run (as in §6). Back up
-  `runs/aupus-0.1-base/` to another disk regularly during a multi-day run.
+  `runs/vulpes-0.1-base/` to another disk regularly during a multi-day run.
 
 ## 16. Milestone 7 results: full data preparation
 
@@ -435,7 +438,7 @@ Code, on the laptop (2026-11-08):
 - `scripts/download_fineweb_edu.py` downloads the first `--files N` parquet files of
   `sample-10BT` at the pinned revision (13 × 2.15 GB + one 0.54 GB file, ~726K
   documents each) and checks each file's SHA-256 (decision 27).
-- `aupus.data.iter_parquet` reads them column-only, in batches, in the same order
+- `vulpes.data.iter_parquet` reads them column-only, in batches, in the same order
   `datasets` streams them. Checked on the real data: the first 2,000 documents of
   `000_00000.parquet` are identical, in order, to the first 2,000 streamed ones. A test
   checks that the parquet source gives byte-identical shards.
@@ -487,7 +490,7 @@ What this means for M8:
 Everything that doesn't need the trained Base model was built and tested on the
 laptop, so the desktop only has to run things. 205 tests pass in ~16 s on CPU.
 
-**M9: evaluation** (`aupus/eval/`, `scripts/download_eval_data.py`, `scripts/evaluate.py`).
+**M9: evaluation** (`vulpes/eval/`, `scripts/download_eval_data.py`, `scripts/evaluate.py`).
 - Log-likelihood scoring with batched, right-padded requests; the tests check it
   against a manual forward pass and that batching never changes a score.
 - Validation loss, perplexity and bits per byte (`evaluate_loss`), on the same
@@ -497,17 +500,17 @@ laptop, so the desktop only has to run things. 205 tests pass in ~16 s on CPU.
 - A *random* `tiny` model scores at chance, as it should (200 questions each:
   HellaSwag 27%, ARC-Easy 24.5%, PIQA 49.5%). Speed on the laptop CPU: ~22
   HellaSwag questions/s for `tiny`, so a full eval is ~10 min (`small`: roughly 4× that).
-- `aupus/model/io.py` loads either a training checkpoint or a release directory.
+- `vulpes/model/io.py` loads either a training checkpoint or a release directory.
 
-**M10: fine-tuning** (`aupus/tokenizer/chat.py`, `aupus/data/sft.py`, `aupus/train/sft.py`,
-`configs/sft/aupus-0.1-instruct.yaml`, `scripts/prepare_sft_data.py`, `scripts/sft.py`).
+**M10: fine-tuning** (`vulpes/tokenizer/chat.py`, `vulpes/data/sft.py`, `vulpes/train/sft.py`,
+`configs/sft/vulpes-0.1-instruct.yaml`, `scripts/prepare_sft_data.py`, `scripts/sft.py`).
 - `Trainer` gained hooks so SFT reuses the loop; pretraining behaviour is unchanged
   (all M6 tests pass, including bit-identical resume). SFT resume is also bit-identical (tested).
 - Real data prepared: 19,276 train / 1,005 val conversations, ~4.8M tokens per epoch
   (docs/DATA.md). A 5-step smoke run on the real data with a random `tiny` works end to end.
 - **Missing: `data/identity.jsonl`** (decision 36).
 
-**M11: inference** (`aupus/cli/`, `scripts/generate.py`, `scripts/chat.py`, `scripts/export_release.py`).
+**M11: inference** (`vulpes/cli/`, `scripts/generate.py`, `scripts/chat.py`, `scripts/export_release.py`).
 - Streaming output never splits a UTF-8 character; Ctrl-C stops a reply, not the chat.
 - fp32 export reproduces the checkpoint's logits exactly; bf16 halves the size
   (max logit difference 0.016 on a random `tiny`).
@@ -518,12 +521,12 @@ docs/DATA.md (SFT and eval data), README.
 On the desktop, once Base is trained:
 
 ```bash
-python scripts/evaluate.py --model runs/aupus-0.1-base/best.pt --val-data data/pretrain/fineweb_edu
+python scripts/evaluate.py --model runs/vulpes-0.1-base/best.pt --val-data data/pretrain/fineweb_edu
 python scripts/prepare_sft_data.py                       # after writing data/identity.jsonl
-python scripts/sft.py --config configs/sft/aupus-0.1-instruct.yaml
-python scripts/evaluate.py --model runs/aupus-0.1-instruct/best.pt
-python scripts/export_release.py --checkpoint runs/aupus-0.1-instruct/best.pt --out release/aupus-0.1-instruct
-python scripts/chat.py --model release/aupus-0.1-instruct
+python scripts/sft.py --config configs/sft/vulpes-0.1-instruct.yaml
+python scripts/evaluate.py --model runs/vulpes-0.1-instruct/best.pt
+python scripts/export_release.py --checkpoint runs/vulpes-0.1-instruct/best.pt --out release/vulpes-0.1-instruct
+python scripts/chat.py --model release/vulpes-0.1-instruct
 ```
 
 ## 18. Pilot before Milestone 8 (2026-11-09)
@@ -601,7 +604,7 @@ most 0.98 GB of tensors but **reserved 10.75 GB**. SFT and evaluation batches al
 different shapes, so the caching allocator keeps reserving new blocks. On Linux it would hit
 the GPU's limit, empty its cache and retry; on Windows the driver never says no, it moves
 the excess to system RAM, and every step crawls. Fixes (decisions 44–45):
-- `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, set when `aupus` is imported: reserved
+- `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, set when `vulpes` is imported: reserved
   memory now follows what is in use (val pass: 0.75 GB reserved instead of 10.75 GB);
 - `cuda_memory_limit_gib` (2.9 in the M8 and M10 configs) caps what a run may reserve, so
   going over it is an out-of-memory error instead of a silent 4× slowdown;
@@ -620,5 +623,5 @@ browser chat (`chat_web.py`, decision 42) all run on it on the GPU. The browser 
 checked live: the page and `/api/info` load, replies stream token by token, a request with a
 foreign `Origin` gets 403, and the server isn't reachable from the LAN address.
 
-Remaining for Aupus 0.1: run M8 (`configs/train/small.yaml`), write `data/identity.jsonl`,
+Remaining for Vulpes 0.1: run M8 (`configs/train/small.yaml`), write `data/identity.jsonl`,
 then repeat M9–M11 on the real checkpoints and fill in MODEL_CARD.md.

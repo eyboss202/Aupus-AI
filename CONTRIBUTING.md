@@ -1,6 +1,6 @@
-# Contributing to Aupus
+# Contributing to Vulpes
 
-Thanks for looking! Aupus is a learning project: the code is meant to be read,
+Thanks for looking! Vulpes is a learning project: the code is meant to be read,
 so clarity matters as much as correctness.
 
 ## Setup
@@ -37,7 +37,7 @@ ruff check . && ruff format --check .     # the same checks CI runs
    `docs/DATA.md` and a pinned revision.
 3. **Benchmarks are never training data.**
 4. **Strict configs.** Settings live in YAML files backed by dataclasses
-   (`aupus/config.py`); an unknown key is an error. New settings get a default,
+   (`vulpes/config.py`); an unknown key is an error. New settings get a default,
    validation in `__post_init__` and a line in the docstring.
 5. **Explain why.** Docstrings say *why* a piece exists or why it is done this
    way, not just what it does. Type hints everywhere (`ruff` checks this).

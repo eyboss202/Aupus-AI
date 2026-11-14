@@ -1,7 +1,7 @@
 """Download and convert the fine-tuning conversations (Milestone 10).
 
 Writes ``data/sft/train.jsonl``, ``data/sft/val.jsonl`` and ``data/sft/stats.json``
-(format and filtering rules: ``aupus/data/sft.py``). Downloads ~80 MB at pinned
+(format and filtering rules: ``vulpes/data/sft.py``). Downloads ~80 MB at pinned
 revisions:
 
 | source   | dataset (revision)                            | license      | kept (measured)        |
@@ -26,7 +26,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from aupus.data.sft import (
+from vulpes.data.sft import (
     dolly_conversations,
     identity_conversations,
     oasst_conversations,

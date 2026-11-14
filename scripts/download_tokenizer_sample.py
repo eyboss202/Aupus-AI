@@ -27,7 +27,7 @@ from pathlib import Path
 DATASET = "HuggingFaceFW/fineweb-edu"
 SUBSET = "sample-10BT"  # ODC-By 1.0; see docs/PLAN.md section 5
 # Pinned dataset revision: the stream order (and so the exact sample) is reproducible.
-# This is the revision data/tokenizer/aupus-bpe-32k.json was trained from.
+# This is the revision data/tokenizer/vulpes-bpe-32k.json was trained from.
 REVISION = "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9"
 
 

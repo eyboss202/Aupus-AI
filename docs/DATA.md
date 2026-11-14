@@ -1,6 +1,6 @@
-# Aupus 0.1 data
+# Vulpes 0.1 data
 
-What Aupus is trained on, under which licenses, and exactly how raw text
+What Vulpes is trained on, under which licenses, and exactly how raw text
 becomes training tokens. Every number here can be reproduced with the commands
 at the end.
 
@@ -25,7 +25,7 @@ per-crawl dedup. Our pipeline is a second, lighter pass on top of that.
 
 ## Pretraining pipeline
 
-`scripts/prepare_data.py` → `aupus/data/pipeline.py`. Settings live in
+`scripts/prepare_data.py` → `vulpes/data/pipeline.py`. Settings live in
 `configs/data/fineweb_edu.yaml` (strict: a typo in a key is an error). The
 resolved settings are copied into each dataset's `meta.json`.
 
@@ -36,7 +36,7 @@ raw document
   → exact dedup      BLAKE2b-128 of the normalised text; keep first
   → near dedup       MinHash (128 perms, word 5-grams) + LSH (16 bands × 8 rows); keep first
   → split            val iff hash < 0.5% of hash space (stable for any order / worker count)
-  → tokenize         Aupus BPE 32k, special-token strings stay plain text, + <|eos|>
+  → tokenize         Vulpes BPE 32k, special-token strings stay plain text, + <|eos|>
   → shards           train_NNNNN.bin / val_NNNNN.bin: raw little-endian uint16, ~100M tokens each
 ```
 
@@ -146,7 +146,7 @@ The 2.94B tokens are more than the 2.5B budget for `small` (0.85 epochs), so a
 
 ## Fine-tuning data (Milestone 10)
 
-`scripts/prepare_sft_data.py` → `aupus/data/sft.py`. It writes
+`scripts/prepare_sft_data.py` → `vulpes/data/sft.py`. It writes
 `data/sft/{train,val}.jsonl` (one `{"id", "source", "messages"}` conversation
 per line) and `data/sft/stats.json`.
 
@@ -157,7 +157,7 @@ per line) and `data/sft/stats.json`.
   oasst1: only 8 of oasst1's 88,838 messages are missing from it, so oasst1
   isn't downloaded separately.
 - **Identity filter**: a conversation in which the *assistant* calls itself Open
-  Assistant or mentions LAION is dropped (130 of 5,401 trees), so Aupus doesn't
+  Assistant or mentions LAION is dropped (130 of 5,401 trees), so Vulpes doesn't
   learn another assistant's name.
 - **Dolly**: user turn = instruction, plus the reference passage after a blank
   line when there is one. Wikipedia citation marks like `[12]` are removed.
@@ -175,7 +175,7 @@ Measured (2026-11-08, without an identity file yet):
 
 A conversation longer than the context window keeps its first 1,024 tokens. The
 loss is only on assistant replies and the `<|end|>` that closes each one (chat
-template: `aupus/tokenizer/chat.py`).
+template: `vulpes/tokenizer/chat.py`).
 
 **Licensing note.** Dolly is CC BY-SA 3.0 (share-alike), the same kind of license
 that led us to leave Wikipedia out of pretraining (decision 4). To train without it:
@@ -191,7 +191,7 @@ written by a person, like all training data here.
 
 **Declared exception (2026-11-10).** The 44 user questions and one reply were written by
 the project author. The author's first replies described a generic large assistant (coding,
-translation, many languages, cloud servers) and never used the name Aupus, so at the
+translation, many languages, cloud servers) and never used the name Vulpes, so at the
 author's request an AI assistant (Claude, used to develop this project) rewrote 43 of the
 44 replies to state the true facts of `docs/IDENTITY.md`, keeping the author's wording
 where it was already true. Those replies are therefore AI-written text: about 1,100 tokens,
@@ -199,7 +199,7 @@ repeated 3× in fine-tuning, next to ~4.5M tokens of human-written conversations
 One conversation per line:
 
 ```json
-{"messages": [{"role": "user", "content": "What is your name?"}, {"role": "assistant", "content": "I'm Aupus, a small language model."}]}
+{"messages": [{"role": "user", "content": "What is your name?"}, {"role": "assistant", "content": "I'm Vulpes, a small language model."}]}
 ```
 
 Vary the wording of the questions (that is what makes it generalise) and keep the
@@ -213,7 +213,7 @@ every line again.
 `scripts/download_eval_data.py` writes `data/eval/<task>.jsonl` with
 `{"id", "context", "choices", "label"}` per question, at pinned revisions. The
 prompt formats are lm-evaluation-harness's, so results are comparable with
-published numbers (`aupus/eval/tasks.py`).
+published numbers (`vulpes/eval/tasks.py`).
 
 | Task | Source (revision) | Split | Questions | License |
 |---|---|---|---|---|
@@ -225,7 +225,7 @@ published numbers (`aupus/eval/tasks.py`).
 
 ```
 data/pretrain/<name>/
-  meta.json          {"format": "aupus-shards", "version": 1, "dtype": "uint16",
+  meta.json          {"format": "vulpes-shards", "version": 1, "dtype": "uint16",
                       "tokenizer": ..., "tokenizer_sha256": ..., "vocab_size": 32000,
                       "eos_id": 31994, "splits": {"train": [{"file", "tokens"}, ...], "val": [...]},
                       "config": {...resolved DataConfig...}}
@@ -239,7 +239,7 @@ to run on a mismatch.
 
 ## Dataloader
 
-`aupus.data.PretrainLoader` memory-maps the shards and serves
+`vulpes.data.PretrainLoader` memory-maps the shards and serves
 `(inputs, targets)` batches of `seq_len` tokens:
 
 - each shard is cut into windows of `seq_len + 1` tokens, so every token is

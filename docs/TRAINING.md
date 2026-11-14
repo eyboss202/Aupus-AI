@@ -1,6 +1,6 @@
-# Training Aupus yourself
+# Training Vulpes yourself
 
-A step-by-step guide to training Aupus 0.1 on your own PC, from a fresh clone to
+A step-by-step guide to training Vulpes 0.1 on your own PC, from a fresh clone to
 chatting with the finished model. Everything is a plain Python script in this
 repository: no cloud service and no AI assistant is needed.
 
@@ -64,7 +64,7 @@ python scripts/prepare_data.py --source parquet --input data/raw/fineweb_edu --o
   uses: more is faster, fewer keeps the PC cooler and quieter. The result is identical
   either way. This step does *not* resume, so an interruption means running it again.
 
-## 2. Pretraining: Aupus 0.1 Base
+## 2. Pretraining: Vulpes 0.1 Base
 
 ### Start the run (once)
 
@@ -72,7 +72,7 @@ python scripts/prepare_data.py --source parquet --input data/raw/fineweb_edu --o
 python scripts/train.py --config configs/train/small.yaml
 ```
 
-Everything the run produces goes to `runs/aupus-0.1-base/`: the log (`train.log`),
+Everything the run produces goes to `runs/vulpes-0.1-base/`: the log (`train.log`),
 metrics, checkpoints (`step_NNNNNN.pt`) and `best.pt`, the checkpoint with the lowest
 validation loss.
 
@@ -90,7 +90,7 @@ never stopped (tested bit for bit, docs/PLAN.md §15).
 - **To continue:** always the same command, however many times you've stopped:
 
 ```powershell
-python scripts/train.py --resume runs/aupus-0.1-base
+python scripts/train.py --resume runs/vulpes-0.1-base
 ```
 
 Don't use `--config` again for a run that already exists: it refuses, so a run is never
@@ -100,7 +100,7 @@ overwritten by accident.
 
 A run can start on one machine and finish on another, for example a rented GPU first and
 this PC afterwards ([`docs/RUNPOD.md`](RUNPOD.md) does the rented part, and
-`scripts/runpod/sync.py` keeps the run's newest checkpoint on this PC while it trains). Copy the whole run folder (`runs/aupus-0.1-base/`, at least the newest
+`scripts/runpod/sync.py` keeps the run's newest checkpoint on this PC while it trains). Copy the whole run folder (`runs/vulpes-0.1-base/`, at least the newest
 `step_NNNNNN.pt`, `config.yaml` and `model.yaml`), make sure the new machine has the same
 `data/pretrain/fineweb_edu/` (copied, or rebuilt with step 1: the result is identical),
 and resume there.
@@ -113,7 +113,7 @@ frequencies back to this card's. A run started at 16 × 16 with `eval_batches=50
 continues on the GTX 1650 Super with:
 
 ```powershell
-python scripts/train.py --resume runs/aupus-0.1-base micro_batch=1 grad_accum=256 eval_batches=800 grad_checkpointing=true cuda_memory_limit_gib=2.9 save_every=10 eval_every=40 sample_every=200 log_every=1
+python scripts/train.py --resume runs/vulpes-0.1-base micro_batch=1 grad_accum=256 eval_batches=800 grad_checkpointing=true cuda_memory_limit_gib=2.9 save_every=10 eval_every=40 sample_every=200 log_every=1
 ```
 
 `scripts/train.py --stop-after HOURS` stops a session cleanly (finish the step, save) after that
@@ -184,11 +184,11 @@ resets on reboot).
 
 | Problem | What to do |
 |---|---|
-| `ModuleNotFoundError: No module named 'aupus'` | The virtual environment isn't active in this terminal: run `.venv\Scripts\activate` first (the prompt then starts with `(.venv)`), or call its Python directly: `.venv\Scripts\python.exe scripts\...` |
+| `ModuleNotFoundError: No module named 'vulpes'` | The virtual environment isn't active in this terminal: run `.venv\Scripts\activate` first (the prompt then starts with `(.venv)`), or call its Python directly: `.venv\Scripts\python.exe scripts\...` |
 | `running scripts is disabled on this system` (when activating) | Windows blocks PowerShell scripts by default. Once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then activate again |
 | `model not found` / `No such file or directory` | Run the commands from the repository folder (`Aupus-AI`), not from `scripts\` |
 | `CUDA out of memory` | Close GPU-heavy programs, or set `grad_checkpointing: true` in the config (or add `grad_checkpointing=true` to the `--resume` command) |
-| `loss is nan` and the run stops | Resume from the last checkpoint; if it happens again at the same place, lower the learning rate: `--resume runs/aupus-0.1-base optim.lr=3e-4` |
+| `loss is nan` and the run stops | Resume from the last checkpoint; if it happens again at the same place, lower the learning rate: `--resume runs/vulpes-0.1-base optim.lr=3e-4` |
 | `already has checkpoints; pass --resume` | You used `--config` for an existing run: use `--resume` instead |
 | `sequences per step ... keep the product the same` or `... pass eval_batches=N` | You changed `micro_batch` when resuming: change `grad_accum` and `eval_batches` with it, as the message says ("Moving a run to another machine") |
 | `shards were tokenized with ... sha256` | The tokenizer file changed (often Windows line endings). Run `git checkout -- data/tokenizer/` |
@@ -211,34 +211,34 @@ the reasoning is in docs/PLAN.md. A rented RTX 4090 trains the same run in ~13�
 
 ```powershell
 python scripts/download_eval_data.py      # once, ~7 MB
-python scripts/evaluate.py --model runs/aupus-0.1-base/best.pt --val-data data/pretrain/fineweb_edu
+python scripts/evaluate.py --model runs/vulpes-0.1-base/best.pt --val-data data/pretrain/fineweb_edu
 ```
 
 Prints validation perplexity and zero-shot accuracy on HellaSwag, ARC-Easy and PIQA,
 next to the score of random guessing, and saves them as JSON next to the checkpoint.
 Training can be stopped (Ctrl-C) to evaluate an intermediate `best.pt`, then resumed.
 
-## 4. Fine-tune into Aupus 0.1 Instruct
+## 4. Fine-tune into Vulpes 0.1 Instruct
 
 ```powershell
 python scripts/prepare_sft_data.py        # ~80 MB of human-written conversations -> data/sft/
-python scripts/sft.py --config configs/sft/aupus-0.1-instruct.yaml
+python scripts/sft.py --config configs/sft/vulpes-0.1-instruct.yaml
 ```
 
 Before this, write `data/identity.jsonl`: a few dozen short conversations about what
-Aupus is (guide: docs/IDENTITY.md; check it with `python scripts/check_identity.py`). It must be written by a person, like all
-of Aupus's training data. Without it, the model won't know its own name.
+Vulpes is (guide: docs/IDENTITY.md; check it with `python scripts/check_identity.py`). It must be written by a person, like all
+of Vulpes's training data. Without it, the model won't know its own name.
 
 Fine-tuning stops by itself when validation loss stops improving. Ctrl-C and
-`python scripts/sft.py --resume runs/aupus-0.1-instruct` work exactly as in pretraining.
+`python scripts/sft.py --resume runs/vulpes-0.1-instruct` work exactly as in pretraining.
 
 ## 5. Export a release and chat
 
 ```powershell
-python scripts/export_release.py --checkpoint runs/aupus-0.1-instruct/best.pt --out release/aupus-0.1-instruct
-python scripts/chat_web.py --model release/aupus-0.1-instruct     # then open http://127.0.0.1:8000
-python scripts/chat.py --model release/aupus-0.1-instruct         # the same chat in the terminal
-python scripts/generate.py --model runs/aupus-0.1-base/best.pt --prompt "The water cycle is"
+python scripts/export_release.py --checkpoint runs/vulpes-0.1-instruct/best.pt --out release/vulpes-0.1-instruct
+python scripts/chat_web.py --model release/vulpes-0.1-instruct     # then open http://127.0.0.1:8000
+python scripts/chat.py --model release/vulpes-0.1-instruct         # the same chat in the terminal
+python scripts/generate.py --model runs/vulpes-0.1-base/best.pt --prompt "The water cycle is"
 ```
 
 The browser chat runs only on your computer. Press Ctrl-C in its terminal to quit. Stop
@@ -247,7 +247,7 @@ next to training). In the terminal chat, `/reset` clears the conversation and `/
 
 **Teaching it with your own chats.** Chatting never changes the model. In the browser chat,
 "Save chat" writes the conversation to `data/chats/` (never committed to git). Open the file,
-rewrite Aupus's replies into the answers you wanted (training on its own unedited replies
+rewrite Vulpes's replies into the answers you wanted (training on its own unedited replies
 would teach it its own mistakes), add the conversations to `data/identity.jsonl` or another
 file passed with `--identity`, and run step 4 again. A release directory
 holds the weights (`model.safetensors`), config, tokenizer and model card. To publish

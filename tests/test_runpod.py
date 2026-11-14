@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from aupus.config import load_yaml
-from aupus.train import TrainConfig, resolve_model_config
+from vulpes.config import load_yaml
+from vulpes.train import TrainConfig, resolve_model_config
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -107,7 +107,7 @@ class FakePod:
 def test_sync_copies_the_run_and_confirms_the_end(tmp_path, monkeypatch):
     sync = load_sync()
     pod = FakePod(tmp_path / "pod")
-    run = pod.root / "workspace/Aupus-AI/runs/aupus-0.1-base"
+    run = pod.root / "workspace/Aupus-AI/runs/vulpes-0.1-base"
     run.mkdir(parents=True)
     (run / "config.yaml").write_text("max_steps: 9537\n")
     (run / "metrics.jsonl").write_text('{"step": 100, "train/loss": 4.5}\n')
@@ -118,7 +118,7 @@ def test_sync_copies_the_run_and_confirms_the_end(tmp_path, monkeypatch):
     (run / "tb" / "events.out").write_bytes(b"e")
     monkeypatch.setattr(sync, "run", pod)
     remote = sync.parse_ssh_command("ssh root@pod -p 1")
-    remote_dir, here = "/workspace/Aupus-AI/runs/aupus-0.1-base", tmp_path / "pc" / "aupus-0.1-base"
+    remote_dir, here = "/workspace/Aupus-AI/runs/vulpes-0.1-base", tmp_path / "pc" / "vulpes-0.1-base"
 
     assert not sync.sync_once(remote, remote_dir, here, keep=2)  # training: copies, doesn't confirm
     assert sorted(p.name for p in here.iterdir()) == [
@@ -205,7 +205,7 @@ def test_train_sh_trains_resumes_and_marks_the_end(tiny_run, tmp_path):
     run_dir = tmp_path / "runs" / "pod"
     env = {
         **os.environ,
-        "AUPUS_NO_TMUX": "1",
+        "VULPES_NO_TMUX": "1",
         "VENV": str(venv),
         "CONFIG": str(config),
         "RUN_DIR": str(run_dir),

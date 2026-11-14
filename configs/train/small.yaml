@@ -1,9 +1,9 @@
-# Milestone 8: Aupus 0.1 Base (`small`, 125.3M params) on 2.5B FineWeb-Edu tokens (docs/PLAN.md §4),
+# Milestone 8: Vulpes 0.1 Base (`small`, 125.3M params) on 2.5B FineWeb-Edu tokens (docs/PLAN.md §4),
 # trained on the GTX 1650 Super desktop (decision 1). Sized from the 1-hour pilot (§18,
 # configs/train/small-pilot.yaml): ~1,750 tok/s, so ~150 s per step and ~16-17 days of GPU time.
-# The run stops and resumes freely (Ctrl-C, then `python scripts/train.py --resume runs/aupus-0.1-base`);
+# The run stops and resumes freely (Ctrl-C, then `python scripts/train.py --resume runs/vulpes-0.1-base`);
 # see docs/TRAINING.md.
-run_name: aupus-0.1-base
+run_name: vulpes-0.1-base
 model: small
 data_dir: data/pretrain/fineweb_edu
 seq_len: 1024

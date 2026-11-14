@@ -1,4 +1,4 @@
-"""Tests for the strict YAML <-> dataclass config layer (aupus.config)."""
+"""Tests for the strict YAML <-> dataclass config layer (vulpes.config)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from aupus.config import ConfigError, from_dict, load_config, parse_override, save_config, to_dict
+from vulpes.config import ConfigError, from_dict, load_config, parse_override, save_config, to_dict
 
 
 @dataclass

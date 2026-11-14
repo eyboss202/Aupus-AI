@@ -6,8 +6,8 @@ import dataclasses
 
 import pytest
 
-from aupus.config import ConfigError
-from aupus.model.config import PRESET_DIR, ModelConfig, flops_per_token, param_count
+from vulpes.config import ConfigError
+from vulpes.model.config import PRESET_DIR, ModelConfig, flops_per_token, param_count
 
 # Target sizes from the spec (docs/PLAN.md), with some tolerance.
 EXPECTED_TOTAL_PARAMS = {
@@ -30,7 +30,7 @@ def test_preset_loads_and_has_expected_size(name):
 
 
 def test_small_preset_exact_count():
-    # Pinned so any accidental change to the Aupus 0.1 shape is noticed in review.
+    # Pinned so any accidental change to the Vulpes 0.1 shape is noticed in review.
     assert param_count(ModelConfig.preset("small"))["total"] == 125_264_640
 
 

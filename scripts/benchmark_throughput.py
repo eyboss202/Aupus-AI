@@ -1,12 +1,12 @@
 """Measure real training throughput (tokens/sec) for each model preset, on CPU or CUDA.
 
-Why this exists: the token budget for Aupus 0.1 is fixed by Chinchilla-style
+Why this exists: the token budget for Vulpes 0.1 is fixed by Chinchilla-style
 scaling (~20 tokens per parameter), so the only unknown in "how long will
 training take?" is how many tokens per second this machine can push through a
 full training step (forward + backward + grad clipping + AdamW update). We
 measure that instead of guessing.
 
-It benchmarks the real ``aupus.model.Transformer`` on random tokens.
+It benchmarks the real ``vulpes.model.Transformer`` on random tokens.
 
 Precision (``--dtype``):
   * ``fp32``: plain float32;
@@ -40,8 +40,8 @@ from dataclasses import asdict
 
 import torch
 
-from aupus.model import ModelConfig, Transformer, flops_per_token, param_count
-from aupus.model.config import PRESET_DIR
+from vulpes.model import ModelConfig, Transformer, flops_per_token, param_count
+from vulpes.model.config import PRESET_DIR
 
 PRESETS = sorted(p.stem for p in PRESET_DIR.glob("*.yaml"))
 DTYPES = {"fp32": torch.float32, "bf16": torch.bfloat16, "fp16": torch.float16}

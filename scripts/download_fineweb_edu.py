@@ -28,7 +28,7 @@ import hashlib
 import time
 from pathlib import Path
 
-from aupus.data.pipeline import FINEWEB_EDU, FINEWEB_EDU_REVISION
+from vulpes.data.pipeline import FINEWEB_EDU, FINEWEB_EDU_REVISION
 
 PREFIX = "sample/10BT/"  # the `sample-10BT` config's files in the dataset repo
 

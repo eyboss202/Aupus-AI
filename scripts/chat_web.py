@@ -1,6 +1,6 @@
-"""Chat with Aupus in the browser (Milestone 11). See ``aupus/cli/web.py``."""
+"""Chat with Vulpes in the browser (Milestone 11). See ``vulpes/cli/web.py``."""
 
-from aupus.cli.web import main
+from vulpes.cli.web import main
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pretrain Aupus 0.1 Base on a RunPod pod, evaluate it, and stop the pod (docs/RUNPOD.md).
+# Pretrain Vulpes 0.1 Base on a RunPod pod, evaluate it, and stop the pod (docs/RUNPOD.md).
 # Run after scripts/runpod/setup.sh. The same command starts the run and resumes it after any stop:
 #
 #   bash scripts/runpod/train.sh                    # start, or continue from the newest checkpoint
@@ -7,12 +7,12 @@
 #   bash scripts/runpod/train.sh max_steps=5767     # key=value overrides go to scripts/train.py
 #
 # What it does:
-#   * runs in a tmux session "aupus" (Ctrl-b d leaves it running; `tmux attach -t aupus` comes back);
+#   * runs in a tmux session "vulpes" (Ctrl-b d leaves it running; `tmux attach -t vulpes` comes back);
 #     running this again while training runs just attaches to it;
-#   * trains with configs/train/small-runpod.yaml (or --resume runs/aupus-0.1-base), stopping cleanly
+#   * trains with configs/train/small-runpod.yaml (or --resume runs/vulpes-0.1-base), stopping cleanly
 #     after MAX_HOURS: a checkpoint is saved, and the run continues later, here or on the PC;
 #   * when the run is finished, scores best.pt (val perplexity, HellaSwag, ARC-Easy, PIQA; ~5 min);
-#   * writes runs/aupus-0.1-base/POD_DONE, then waits up to WAIT_FOR_PC_MIN minutes for the PC's
+#   * writes runs/vulpes-0.1-base/POD_DONE, then waits up to WAIT_FOR_PC_MIN minutes for the PC's
 #     scripts/runpod/sync.py to copy everything and confirm (it writes PULLED), then stops the pod,
 #     so an idle GPU never eats the budget. Ctrl-C during that wait cancels the stop.
 #
@@ -27,7 +27,7 @@ WAIT_FOR_PC_MIN="${WAIT_FOR_PC_MIN:-120}"
 AUTO_STOP="${AUTO_STOP:-1}"
 EVAL="${EVAL:-1}"
 VENV="${VENV:-/workspace/venv}"
-RUN_DIR="${RUN_DIR:-runs/aupus-0.1-base}"
+RUN_DIR="${RUN_DIR:-runs/vulpes-0.1-base}"
 CONFIG="${CONFIG:-configs/train/small-runpod.yaml}"
 DATA="${DATA:-data/pretrain/fineweb_edu}"
 OUT="$(dirname "$RUN_DIR")/pod-console.log"  # everything printed, across sessions (train.log has the run's own lines)
@@ -37,16 +37,16 @@ mkdir -p "$RUN_DIR"
 
 training_running() { ! flock -n "$LOCK" true; }
 
-if [ -z "${TMUX:-}" ] && [ "${AUPUS_NO_TMUX:-0}" != 1 ]; then
+if [ -z "${TMUX:-}" ] && [ "${VULPES_NO_TMUX:-0}" != 1 ]; then
     if ! command -v tmux >/dev/null; then  # wiped with the container disk on every pod restart
         apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq tmux >/dev/null
     fi
-    if tmux has-session -t aupus 2>/dev/null; then
+    if tmux has-session -t vulpes 2>/dev/null; then
         if training_running; then
             echo "train.sh is already running: attaching (Ctrl-b d to leave it)"
-            exec tmux attach -t aupus
+            exec tmux attach -t vulpes
         fi
-        tmux kill-session -t aupus
+        tmux kill-session -t vulpes
     fi
     settings="MAX_HOURS=$(printf %q "$MAX_HOURS") WAIT_FOR_PC_MIN=$(printf %q "$WAIT_FOR_PC_MIN")"
     settings+=" AUTO_STOP=$(printf %q "$AUTO_STOP") EVAL=$(printf %q "$EVAL") VENV=$(printf %q "$VENV")"
@@ -56,12 +56,12 @@ if [ -z "${TMUX:-}" ] && [ "${AUPUS_NO_TMUX:-0}" != 1 ]; then
     # `exec bash -c`: bash (not whatever tmux's default shell is) runs it, so Ctrl-C behaves as tested;
     # the final `exec bash` keeps the window open with a shell when the script ends.
     inner="cd $(printf %q "$REPO") && env $settings bash scripts/runpod/train.sh$args; exec bash"
-    exec tmux new-session -s aupus "exec bash -c $(printf %q "$inner")"
+    exec tmux new-session -s vulpes "exec bash -c $(printf %q "$inner")"
 fi
 
 exec 9>"$LOCK"
 if ! flock -n 9; then
-    echo "ERROR: train.sh is already running (tmux attach -t aupus)"
+    echo "ERROR: train.sh is already running (tmux attach -t vulpes)"
     exit 1
 fi
 # shellcheck disable=SC1091

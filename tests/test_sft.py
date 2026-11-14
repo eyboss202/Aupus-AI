@@ -13,8 +13,8 @@ import numpy as np
 import pytest
 import torch
 
-from aupus.config import ConfigError, save_config
-from aupus.data.sft import (
+from vulpes.config import ConfigError, save_config
+from vulpes.data.sft import (
     SFTLoader,
     collate,
     dolly_conversations,
@@ -25,13 +25,13 @@ from aupus.data.sft import (
     tokenize,
     write_jsonl,
 )
-from aupus.model import IGNORE_INDEX
-from aupus.model.io import load_model
-from aupus.tokenizer import ASSISTANT, END, EOS, PAD, USER, Tokenizer
-from aupus.tokenizer.chat import ChatFormatError, prompt_ids, render, validate
-from aupus.train import checkpoint as ckpt
-from aupus.train import pretrain
-from aupus.train.sft import SFTConfig, SFTTrainer, sft_loss
+from vulpes.model import IGNORE_INDEX
+from vulpes.model.io import load_model
+from vulpes.tokenizer import ASSISTANT, END, EOS, PAD, USER, Tokenizer
+from vulpes.tokenizer.chat import ChatFormatError, prompt_ids, render, validate
+from vulpes.train import checkpoint as ckpt
+from vulpes.train import pretrain
+from vulpes.train.sft import SFTConfig, SFTTrainer, sft_loss
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -177,7 +177,7 @@ def test_dolly_conversion():
 
 def test_identity_file(tmp_path):
     path = tmp_path / "identity.jsonl"
-    good = {"messages": chat("What is your name?", "I am Aupus.")}
+    good = {"messages": chat("What is your name?", "I am Vulpes.")}
     path.write_text(json.dumps(good) + "\n\n" + json.dumps(good) + "\n")
     convs = identity_conversations(path)
     assert len(convs) == 2 and convs[0]["source"] == "identity"
@@ -370,7 +370,7 @@ def test_sft_resume_is_bit_identical(tiny_run, sft_data, tmp_path, monkeypatch):
 def test_chat_samples(tiny_run, sft_data, tmp_path):
     cfg = make_sft_cfg(tiny_run, sft_data, tmp_path, sample_prompts=["The cat"], sample_tokens=6)
     (sample,) = SFTTrainer(cfg, log=quiet).samples()
-    assert sample.startswith("User: The cat\nAupus: ")
+    assert sample.startswith("User: The cat\nVulpes: ")
 
 
 def test_sft_script(tiny_run, sft_data, tmp_path, monkeypatch, capsys):
@@ -393,12 +393,12 @@ def test_partial_optim_section_keeps_sft_defaults():
 
 
 def test_shipped_sft_config_loads():
-    cfg = SFTConfig.from_yaml(ROOT / "configs" / "sft" / "aupus-0.1-instruct.yaml")
+    cfg = SFTConfig.from_yaml(ROOT / "configs" / "sft" / "vulpes-0.1-instruct.yaml")
     assert cfg.optim.lr < 1e-4 and cfg.patience > 0 and cfg.init_from.endswith("best.pt")
 
 
 def test_refuses_a_different_tokenizer(tiny_run, sft_data, tmp_path):
     """The Base checkpoint records its tokenizer's SHA-256; SFT with another tokenizer must fail."""
-    other = str(ROOT / "data" / "tokenizer" / "aupus-bpe-32k.json")
+    other = str(ROOT / "data" / "tokenizer" / "vulpes-bpe-32k.json")
     with pytest.raises(ValueError, match="not the tokenizer"):
         SFTTrainer(make_sft_cfg(tiny_run, sft_data, tmp_path, tokenizer=other), log=quiet)
